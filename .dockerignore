@@ -1,0 +1,6 @@
+.git
+node_modules
+backend/venv
+backend/chroma_db
+backend/uploads
+.env

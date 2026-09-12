@@ -1,0 +1,35 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: legal_copilot
+    ports: ["3306:3306"]
+    volumes: ["mysql_data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD","mysqladmin","ping","-h","localhost","-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  backend:
+    build: ./backend
+    working_dir: /app
+    environment:
+      DATABASE_URL: mysql+pymysql://root:root@mysql:3306/legal_copilot
+      JWT_SECRET_KEY: change_me_for_demo
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports: ["8000:8000"]
+    command: sh -c "alembic upgrade head && python seed_users.py && uvicorn main:app --host 0.0.0.0 --port 8000"
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    depends_on: [backend]
+    ports: ["5173:80"]
+volumes:
+  mysql_data:

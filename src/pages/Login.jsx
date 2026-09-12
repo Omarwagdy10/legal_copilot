@@ -1,0 +1,8 @@
+import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+const API_URL='http://127.0.0.1:8000';
+export default function Login(){
+ const nav=useNavigate(), loc=useLocation(); const [username,setUsername]=useState(''); const [password,setPassword]=useState(''); const [message,setMessage]=useState(''); const [loading,setLoading]=useState(false);
+ const login=async e=>{e.preventDefault();setLoading(true);setMessage('');try{const r=await fetch(`${API_URL}/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});const d=await r.json();if(!r.ok){setMessage(d.detail||d.message||'Login failed.');return;}localStorage.setItem('access_token',d.access_token);localStorage.setItem('user_role',d.role);localStorage.setItem('username',d.username||username);nav(loc.state?.from||'/',{replace:true});}catch{setMessage('Unable to connect to the server. Please make sure the backend is running.')}finally{setLoading(false)}};
+ return <div className="login-page"><div className="login-card"><h2>Legal Copilot ⚖️</h2><p>Sign in to review contracts securely.</p>{message&&<div className="alert alert-danger">{message}</div>}<form onSubmit={login}><label className="form-label">Username</label><input className="form-control mb-3" value={username} onChange={e=>setUsername(e.target.value)} required/><label className="form-label">Password</label><input type="password" className="form-control mb-3" value={password} onChange={e=>setPassword(e.target.value)} required/><button className="btn btn-primary w-100" disabled={loading}>{loading?'Signing in...':'Login'}</button></form><small className="text-muted d-block mt-3">Demo users: reviewer1 / 123456, counsel1 / 123456</small></div></div>
+}

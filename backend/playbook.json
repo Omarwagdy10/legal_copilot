@@ -1,0 +1,40 @@
+{
+  "rules": [
+    {
+      "clause": "فترة الاختبار",
+      "clause_aliases": [
+        "فترة الاختبار",
+        "probation period",
+        "probation"
+      ],
+      "expected": "لا تزيد عن ثلاثة أشهر"
+    },
+    {
+      "clause": "السرية",
+      "clause_aliases": [
+        "السرية",
+        "confidentiality",
+        "confidential"
+      ],
+      "expected": "يجب أن تكون مدة السرية محددة"
+    },
+    {
+      "clause": "إنهاء العقد",
+      "clause_aliases": [
+        "إنهاء العقد",
+        "termination",
+        "termination of contract"
+      ],
+      "expected": "يجب أن تكون إجراءات الإخطار واضحة"
+    },
+    {
+      "clause": "الملكية الفكرية",
+      "clause_aliases": [
+        "الملكية الفكرية",
+        "intellectual property",
+        "ip rights"
+      ],
+      "expected": "يجب أن تكون حقوق الملكية الفكرية محددة بوضوح"
+    }
+  ]
+}
