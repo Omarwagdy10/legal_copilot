@@ -12,7 +12,7 @@ from pypdf import PdfReader
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Document, Review, Approval, RiskAssessment, User, Run, RunStep
+from models import Document, Review, Approval, RiskAssessment, User, Run, RunStep, DeviationResult
 from core_config import settings
 from services.llm_service import generate_ai_response, generate_json_response
 from services.rag_service import get_embedding_model, hybrid_search, language_of
@@ -112,16 +112,78 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     token=jwt.encode({'sub':str(user.id),'username':user.username,'role':user.role,'exp':exp}, settings.jwt_secret_key, algorithm='HS256')
     return {'access_token':token,'token_type':'bearer','role':user.role,'username':user.username}
 
+def run_document_indexing(filename: str, db: Session):
+    text = clean_text(extract_text(filename))
+    clauses = ClauseExtractorAgent().run(text)
+    chunks = clauses.get('clauses', [])
+    if not chunks:
+        raise RuntimeError('No clauses could be extracted from the document.')
+
+    model = get_embedding_model()
+    embeddings = model.encode([c.get('text', '') for c in chunks])
+    ids = [f'{filename}-{i}' for i in range(len(chunks))]
+    metadata = [
+        {
+            'filename': filename,
+            'chunk_index': i,
+            'section': c.get('section', c.get('title', '')),
+            'language': language_of(c.get('text', '')),
+            'source': 'contract'
+        }
+        for i, c in enumerate(chunks)
+    ]
+
+    collection.upsert(
+        ids=ids,
+        documents=[c.get('text', '') for c in chunks],
+        embeddings=embeddings.tolist(),
+        metadatas=metadata
+    )
+
+    doc = db.query(Document).filter(Document.stored_filename == filename).first()
+    if doc:
+        doc.status = 'indexed'
+        db.commit()
+
+    return len(chunks)
+
 @app.post('/documents/upload')
 async def upload_document(file: UploadFile=File(...), db: Session=Depends(get_db), user: User=Depends(get_current_user)):
-    if not file.filename: raise HTTPException(400,'A filename is required.')
-    content=await file.read()
-    if len(content) > settings.max_upload_mb*1024*1024: raise HTTPException(413, f'Max upload size is {settings.max_upload_mb} MB.')
-    stored=unique_filename(file.filename)
-    (BASE_DIR/'uploads'/stored).write_bytes(content)
-    doc=Document(original_filename=os.path.basename(file.filename), stored_filename=stored, status='uploaded')
-    db.add(doc); db.commit(); db.refresh(doc)
-    return {'id':doc.id,'filename':stored,'message':'Document uploaded successfully.'}
+    if not file.filename:
+        raise HTTPException(400, 'A filename is required.')
+
+    content = await file.read()
+    if len(content) > settings.max_upload_mb * 1024 * 1024:
+        raise HTTPException(413, f'Max upload size is {settings.max_upload_mb} MB.')
+
+    stored = unique_filename(file.filename)
+    (BASE_DIR / 'uploads' / stored).write_bytes(content)
+
+    doc = Document(
+        original_filename=os.path.basename(file.filename),
+        stored_filename=stored,
+        status='uploaded'
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    try:
+        chunk_count = run_document_indexing(stored, db)
+        message = 'Document uploaded and indexed successfully.'
+    except Exception as exc:
+        doc.status = 'failed'
+        db.commit()
+        chunk_count = 0
+        message = f'Document uploaded, but automatic indexing failed: {exc}'
+
+    return {
+        'id': doc.id,
+        'filename': stored,
+        'status': doc.status,
+        'number_of_chunks': chunk_count,
+        'message': message
+    }
 
 @app.get('/documents')
 def get_documents(db: Session=Depends(get_db), user: User=Depends(get_current_user)):
@@ -131,263 +193,279 @@ def get_documents(db: Session=Depends(get_db), user: User=Depends(get_current_us
 
 @app.post('/documents/index/{filename}')
 def index_document(filename:str, db:Session=Depends(get_db), user:User=Depends(get_current_user)):
-    text=clean_text(extract_text(filename))
-    clauses=ClauseExtractorAgent().run(text)
-    chunks=clauses.get('clauses',[])
-    if not chunks: raise HTTPException(422,'No clauses could be extracted from the document.')
-    model=get_embedding_model(); embeddings=model.encode([c.get('text','') for c in chunks])
-    ids=[f'{filename}-{i}' for i in range(len(chunks))]
-    metadata=[]
-    for i,c in enumerate(chunks):
-        metadata.append({'filename':filename,'chunk_index':i,'section':c.get('section',c.get('title','')),'language':language_of(c.get('text','')),'source':'contract'})
-    collection.upsert(ids=ids,documents=[c.get('text','') for c in chunks],embeddings=embeddings.tolist(),metadatas=metadata)
-    doc=db.query(Document).filter(Document.stored_filename==filename).first()
-    if doc: doc.status='indexed'; db.commit()
-    return {'filename':filename,'number_of_chunks':len(chunks),'message':'Document indexed successfully.'}
+    try:
+        chunk_count = run_document_indexing(filename, db)
+    except RuntimeError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:
+        doc = db.query(Document).filter(Document.stored_filename == filename).first()
+        if doc:
+            doc.status = 'failed'
+            db.commit()
+        raise HTTPException(503, f'Indexing failed: {exc}')
 
-
+    return {
+        'filename': filename,
+        'number_of_chunks': chunk_count,
+        'message': 'Document indexed successfully.'
+    }
 
 @app.get('/documents/search')
-def search_documents(
-    query: str,
-    language: str | None = None,
-    user: User = Depends(get_current_user)
-):
-    return {
-        'query': query,
-        'language': language,
-        'results': hybrid_search(
-            collection,
-            query,
-            top_k=5,
-            language=language
-        )
-    }
-    
+def search_documents(query:str, user:User=Depends(get_current_user)):
+    return {'query':query,'results':hybrid_search(collection,query,top_k=5)}
 
 @app.get('/ask')
-def ask_question(
-    query: str,
-    language: str | None = None,
-    user: User = Depends(get_current_user)
-):
-    results = hybrid_search(
-        collection,
-        query,
-        top_k=5,
-        language=language
-    )
-
+def ask_question(query:str, user:User=Depends(get_current_user)):
+    results=hybrid_search(collection,query,top_k=5)
     if not results or results[0]['fusion_score'] < settings.min_evidence_score:
-        return {
-            'question': query,
-            'answer': 'Not enough information in the document.',
-            'sources': []
-        }
-
-    context = '\n\n'.join(
-        f"[{i + 1}] {r['text']}"
-        for i, r in enumerate(results)
-    )
-
+        return {'question':query,'answer':'Not enough information in the document.','sources':[]}
+    context='\n\n'.join(f"[{i+1}] {r['text']}" for i,r in enumerate(results))
     prompt = (
-        "You are a legal assistant. "
-        "Answer ONLY from the supplied context. "
-        "Respect the language of the user. "
-        "If evidence is insufficient, say exactly: "
-        "Not enough information in the document.\n\n"
-        f"Context:\n{context}\n\n"
-        f"Question:\n{query}"
+        f"You are a legal assistant. Answer ONLY from the supplied context. "
+        f"Respect the language of the user. If evidence is insufficient, say exactly: Not enough information in the document.\n\n"
+        f"Context:\n{context}\n\nQuestion:\n{query}"
     )
+    answer=generate_ai_response(prompt)
+    return {'question':query,'answer':answer,'sources':results}
 
-    answer = generate_ai_response(prompt)
 
+def serialize_deviation_results(filename, rows):
     return {
-        'question': query,
-        'language': language,
-        'answer': answer,
-        'sources': results
-    }    
+        'filename': filename,
+        'results': [
+            {
+                'title': row.clause_title,
+                'text': row.clause_text,
+                'rule': json.loads(row.playbook_rule) if row.playbook_rule else None,
+                'deviation': json.loads(row.deviation_json) if row.deviation_json else None,
+                'reason': row.reason,
+            }
+            for row in rows
+        ]
+    }
 
+
+@app.get("/documents/deviation/{filename}")
+def get_deviation(filename: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    document = db.query(Document).filter(Document.stored_filename == filename).first()
+    if not document:
+        raise HTTPException(404, 'Document not found.')
+
+    rows = db.query(DeviationResult).filter(
+        DeviationResult.document_id == document.id
+    ).order_by(DeviationResult.id).all()
+
+    if not rows:
+        raise HTTPException(404, 'No saved deviation result found for this document.')
+
+    return serialize_deviation_results(filename, rows)
 
 
 @app.post("/documents/deviation/{filename}")
 def analyze_deviation(
     filename: str,
-    user: User = Depends(get_current_user)
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    document = db.query(Document).filter(Document.stored_filename == filename).first()
+    if not document:
+        raise HTTPException(404, 'Document not found.')
+
+    existing = db.query(DeviationResult).filter(
+        DeviationResult.document_id == document.id
+    ).order_by(DeviationResult.id).all()
+
+    if existing:
+        return {
+            **serialize_deviation_results(filename, existing),
+            'cached': True
+        }
+
     try:
-        # Extract and clean document text
         text = clean_text(extract_text(filename))
-
-        # Extract contract clauses using AI
         clauses = ClauseExtractorAgent().run(text)
-
         results = []
 
-        # Analyze every clause against the playbook
         for clause in clauses.get("clauses", []):
             title = clause.get("title", "")
             clause_text = clause.get("text", "")
-
-            # Find matching playbook rule
             rule = find_matching_rule(title)
 
-            # No matching rule
             if not rule:
-                results.append({
-                    "title": title,
-                    "text": clause_text,
-                    "deviation": None,
-                    "reason": "No matching playbook rule"
-                })
-                continue
-
-            # Load deviation prompt
-            prompt_path = BASE_DIR / "prompts" / "deviation.txt"
-            prompt = prompt_path.read_text(
-                encoding="utf-8"
-            )
-
-            # Add clause and playbook rule to prompt
-            prompt += (
-                f"\nContract Clause:\n"
-                f"{clause_text}\n\n"
-                f"Playbook Rule:\n"
-                f"{json.dumps(rule, ensure_ascii=False)}"
-            )
-
-            # Ask Gemini to analyze the deviation
-            deviation = generate_json_response(prompt)
+                deviation = None
+                reason = "No matching playbook rule"
+            else:
+                prompt_path = BASE_DIR / "prompts" / "deviation.txt"
+                prompt = prompt_path.read_text(encoding="utf-8")
+                prompt += (
+                    f"\nContract Clause:\n{clause_text}\n\n"
+                    f"Playbook Rule:\n{json.dumps(rule, ensure_ascii=False)}"
+                )
+                deviation = generate_json_response(prompt)
+                reason = deviation.get('reason', '') if isinstance(deviation, dict) else ''
 
             results.append({
                 "title": title,
                 "text": clause_text,
                 "rule": rule,
-                "deviation": deviation
+                "deviation": deviation,
+                "reason": reason,
             })
 
+            db.add(DeviationResult(
+                document_id=document.id,
+                clause_title=title,
+                clause_text=clause_text,
+                playbook_rule=json.dumps(rule, ensure_ascii=False) if rule else None,
+                deviation_json=json.dumps(deviation, ensure_ascii=False) if deviation is not None else None,
+                reason=reason,
+            ))
+
+        db.commit()
+        rows = db.query(DeviationResult).filter(
+            DeviationResult.document_id == document.id
+        ).order_by(DeviationResult.id).all()
+
         return {
-            "filename": filename,
-            "results": results
+            **serialize_deviation_results(filename, rows),
+            'cached': False
         }
 
     except RuntimeError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=str(exc)
-        )
-
+        db.rollback()
+        raise HTTPException(status_code=503, detail=str(exc))
     except HTTPException:
+        db.rollback()
         raise
-
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Deviation analysis failed: {exc}"
-        )
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Deviation analysis failed: {exc}")
 
 
-@app.post('/documents/review/{filename}')
-def review_contract(
-    filename: str,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user)
-):
-    document = db.query(Document).filter(
-        Document.stored_filename == filename
-    ).first()
+def serialize_saved_review(filename, document, review, risks, approvals):
+    return {
+        'filename': filename,
+        'reviewed_by': None,
+        'run_id': None,
+        'correlation_id': None,
+        'cached': True,
+        'review': {
+            'risks': [
+                {
+                    'title': r.clause_title,
+                    'risk': {
+                        'risk_level': r.risk_level,
+                        'reason': r.reason,
+                        'evidence': r.evidence,
+                    }
+                }
+                for r in risks
+            ],
+            'memo': review.memo,
+            'approval_history': [
+                {
+                    'id': a.id,
+                    'decision': a.decision,
+                    'comment': a.comment,
+                    'created_at': a.created_at,
+                }
+                for a in approvals
+            ],
+        }
+    }
 
+
+@app.get('/documents/review/{filename}')
+def get_saved_review(filename: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    document = db.query(Document).filter(Document.stored_filename == filename).first()
     if not document:
         raise HTTPException(404, 'Document not found.')
 
-    correlation_id = str(uuid.uuid4())
+    review = db.query(Review).filter(
+        Review.document_id == document.id
+    ).order_by(Review.created_at.desc()).first()
 
-    run = make_run(
-        db,
-        document.id,
-        user.id,
-        'contract_review',
-        3,
-        correlation_id
-    )
+    if not review:
+        raise HTTPException(404, 'No saved review found for this document.')
+
+    risks = db.query(RiskAssessment).filter(
+        RiskAssessment.review_id == review.id
+    ).order_by(RiskAssessment.id).all()
+
+    approvals = db.query(Approval).filter(
+        Approval.review_id == review.id
+    ).order_by(Approval.id.desc()).all()
+
+    return serialize_saved_review(filename, document, review, risks, approvals)
+
+
+@app.post('/documents/review/{filename}')
+def review_contract(filename: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    document = db.query(Document).filter(Document.stored_filename == filename).first()
+    if not document:
+        raise HTTPException(404, 'Document not found.')
+
+    existing_review = db.query(Review).filter(
+        Review.document_id == document.id
+    ).order_by(Review.created_at.desc()).first()
+
+    if existing_review:
+        risks = db.query(RiskAssessment).filter(
+            RiskAssessment.review_id == existing_review.id
+        ).order_by(RiskAssessment.id).all()
+        approvals = db.query(Approval).filter(
+            Approval.review_id == existing_review.id
+        ).order_by(Approval.id.desc()).all()
+        return serialize_saved_review(filename, document, existing_review, risks, approvals)
+
+    correlation_id = str(uuid.uuid4())
+    run = make_run(db, document.id, user.id, 'contract_review', 3, correlation_id)
 
     try:
-        # -----------------------------
-        # Normal Multi-Agent Workflow
-        # -----------------------------
-
         text = clean_text(extract_text(filename))
-
         record_step(
-            db,
-            run,
-            'extract_and_clean',
-            'System',
-            'completed',
-            {'filename': filename}
+            db, run, 'extract_and_clean', 'Clause Extractor',
+            'completed', {'filename': filename}
         )
 
         orchestrator = LegalReviewOrchestrator()
-
         result = orchestrator.run(text)
 
         record_step(
-            db,
-            run,
-            'extract_clauses',
-            'Clause Extractor',
-            'completed',
-            {'count': len(result['clauses'])}
+            db, run, 'extract_clauses', 'Clause Extractor',
+            'completed', {'count': len(result['clauses'])}
         )
-
         record_step(
-            db,
-            run,
-            'assess_risks',
-            'Risk Assessor',
-            'completed',
-            {'count': len(result['risks'])}
+            db, run, 'assess_risks', 'Risk Assessor',
+            'completed', {'count': len(result['risks'])}
         )
-
         record_step(
-            db,
-            run,
-            'draft_memo',
-            'Memo Drafter',
-            'completed',
-            {'characters': len(result['memo'])}
+            db, run, 'draft_memo', 'Memo Drafter',
+            'completed', {'characters': len(result['memo'])}
         )
 
-        # Save review
         review = Review(
             document_id=document.id,
             status='completed',
             memo=result['memo']
         )
-
         db.add(review)
         db.flush()
 
-        # Save risks
         for risk in result['risks']:
-            db.add(
-                RiskAssessment(
-                    document_id=document.id,
-                    review_id=review.id,
-                    clause_title=risk['title'],
-                    risk_level=risk['risk']['risk_level'],
-                    reason=risk['risk']['reason'],
-                    evidence=risk['risk']['evidence']
-                )
-            )
+            db.add(RiskAssessment(
+                document_id=document.id,
+                review_id=review.id,
+                clause_title=risk['title'],
+                risk_level=risk['risk']['risk_level'],
+                reason=risk['risk']['reason'],
+                evidence=risk['risk']['evidence']
+            ))
 
         document.status = 'reviewed'
-
         run.status = 'completed'
         run.completed_steps = 3
         run.completed_at = datetime.now(timezone.utc)
-
         db.commit()
 
         return {
@@ -395,58 +473,22 @@ def review_contract(
             'reviewed_by': user.username,
             'run_id': run.id,
             'correlation_id': correlation_id,
-            'degraded': False,
+            'cached': False,
             'review': {
                 'risks': result['risks'],
-                'memo': result['memo']
+                'memo': result['memo'],
+                'approval_history': []
             }
         }
 
     except Exception as exc:
-
-        # -----------------------------
-        # Graceful Degradation
-        # -----------------------------
-
-        print(f"Multi-agent workflow failed: {exc}")
-
-        results = hybrid_search(
-            collection,
-            "contract risks important clauses obligations deviations",
-            top_k=5
-        )
-
-        # Record degraded step
-        record_step(
-            db,
-            run,
-            'plain_rag_fallback',
-            'RAG',
-            'completed',
-            {
-                'reason': str(exc),
-                'results_count': len(results)
-            }
-        )
-
-        run.status = 'degraded'
-        run.completed_at = datetime.now(timezone.utc)
-
-        db.commit()
-
-        return {
-            'filename': filename,
-            'reviewed_by': user.username,
-            'run_id': run.id,
-            'correlation_id': correlation_id,
-            'degraded': True,
-            'message': 'Multi-agent review was unavailable. Plain RAG fallback was used.',
-            'review': {
-                'risks': [],
-                'memo': 'AI review is temporarily unavailable. Relevant contract evidence was retrieved using the RAG fallback.',
-                'sources': results
-            }
-        }
+        db.rollback()
+        run = db.get(Run, run.id)
+        if run:
+            run.status = 'failed'
+            run.completed_at = datetime.now(timezone.utc)
+            db.commit()
+        raise HTTPException(500, f'Review failed: {exc}')
 
 
 @app.get('/runs/{run_id}')
@@ -479,8 +521,31 @@ def approve_document(filename:str, request:ApprovalRequest, db:Session=Depends(g
     review=db.query(Review).filter(Review.document_id==document.id).order_by(Review.created_at.desc()).first()
     if not review: raise HTTPException(400,'No review found for this document.')
     approval=Approval(document_id=document.id,review_id=review.id,decision=request.decision,decided_by_user_id=user.id,comment=request.comment)
-    db.add(approval); document.status=request.decision; db.commit(); db.refresh(approval)
-    return {'filename':filename,'status':request.decision,'approval_id':approval.id,'approved_by':user.username,'message':f'Document {request.decision} successfully.'}
+    db.add(approval)
+    document.status = request.decision
+    db.commit()
+    db.refresh(approval)
+
+    history = db.query(Approval).filter(
+        Approval.review_id == review.id
+    ).order_by(Approval.id.desc()).all()
+
+    return {
+        'filename': filename,
+        'status': request.decision,
+        'approval_id': approval.id,
+        'approved_by': user.username,
+        'message': f'Document {request.decision} successfully.',
+        'approval_history': [
+            {
+                'id': a.id,
+                'decision': a.decision,
+                'comment': a.comment,
+                'created_at': a.created_at,
+            }
+            for a in history
+        ]
+    }
 
 @app.get('/documents/clauses/{filename}')
 def get_clauses(filename:str, user:User=Depends(get_current_user)):
@@ -524,6 +589,11 @@ def delete_document(
     # Delete related reviews
     db.query(Review).filter(
         Review.document_id == document.id
+    ).delete(synchronize_session=False)
+
+    # Delete saved deviation results
+    db.query(DeviationResult).filter(
+        DeviationResult.document_id == document.id
     ).delete(synchronize_session=False)
 
     # Delete document record

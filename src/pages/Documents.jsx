@@ -1,18 +1,14 @@
 import { useEffect, useState } from "react";
-import { useLanguage } from "../context/LanguageContext";
 
 const API_URL = "http://127.0.0.1:8000";
 
 export default function Documents() {
-  const { t, language } = useLanguage();
-
-  const isArabic = language === "ar";
-
   const [file, setFile] = useState(null);
   const [filename, setFilename] = useState("");
 
   const [documents, setDocuments] = useState([]);
   const [review, setReview] = useState(null);
+  const [deviation, setDeviation] = useState(null);
 
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,13 +20,7 @@ export default function Documents() {
       setDocuments([]);
       setFilename("");
       localStorage.removeItem("filename");
-
-      setMessage(
-        isArabic
-          ? "يرجى تسجيل الدخول أولًا لعرض المستندات."
-          : "Please login first to view your documents.",
-      );
-
+      setMessage("Please login first to view your documents.");
       return;
     }
 
@@ -52,32 +42,19 @@ export default function Documents() {
 
         setDocuments([]);
         setFilename("");
-
-        setMessage(
-          isArabic
-            ? "انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى."
-            : "Your session has expired. Please login again.",
-        );
-
+        setMessage("Your session has expired. Please login again.");
         return;
       }
 
       if (!response.ok) {
-        setMessage(
-          data.detail ||
-            data.message ||
-            (isArabic ? "تعذر تحميل المستندات." : "Unable to load documents."),
-        );
-
+        setMessage(data.detail || data.message || "Unable to load documents.");
         return;
       }
 
       setDocuments(data.documents || []);
     } catch {
       setMessage(
-        isArabic
-          ? "تعذر الاتصال بالخادم. تأكد من تشغيل الـ backend."
-          : "Unable to connect to the server. Please make sure the backend is running.",
+        "Unable to connect to the server. Please make sure the backend is running.",
       );
     }
   };
@@ -88,22 +65,7 @@ export default function Documents() {
 
   const uploadDocument = async () => {
     if (!file) {
-      setMessage(
-        isArabic
-          ? "يرجى اختيار ملف PDF أولًا."
-          : "Please select a PDF file first.",
-      );
-      return;
-    }
-
-    const token = localStorage.getItem("access_token");
-
-    if (!token) {
-      setMessage(
-        isArabic
-          ? "يرجى تسجيل الدخول أولًا لرفع المستند."
-          : "Please login first to upload a document.",
-      );
+      setMessage("Please select a PDF file first.");
       return;
     }
 
@@ -114,6 +76,9 @@ export default function Documents() {
       setLoading(true);
       setMessage("");
       setReview(null);
+      setDeviation(null);
+
+      const token = localStorage.getItem("access_token");
 
       const response = await fetch(`${API_URL}/documents/upload`, {
         method: "POST",
@@ -125,45 +90,22 @@ export default function Documents() {
 
       const data = await response.json();
 
-      if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("username");
-        localStorage.removeItem("user_role");
-        localStorage.removeItem("filename");
-
-        setMessage(
-          isArabic
-            ? "انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى."
-            : "Your session has expired. Please login again.",
-        );
-
-        return;
-      }
-
       if (!response.ok) {
         setMessage(
-          data.detail ||
-            data.message ||
-            (isArabic ? "تعذر رفع المستند." : "Unable to upload the document."),
+          data.detail || data.message || "Unable to upload the document.",
         );
-
         return;
       }
 
       setFilename(data.filename);
-
       localStorage.setItem("filename", data.filename);
 
-      setMessage(
-        isArabic ? "تم رفع المستند بنجاح." : "Document uploaded successfully.",
-      );
+      setMessage(data.message || "Document uploaded successfully.");
 
       await fetchDocuments();
     } catch {
       setMessage(
-        isArabic
-          ? "تعذر الاتصال بالخادم. تأكد من تشغيل الـ backend."
-          : "Unable to connect to the server. Please make sure the backend is running.",
+        "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
       setLoading(false);
@@ -172,11 +114,7 @@ export default function Documents() {
 
   const indexDocument = async (selectedFilename) => {
     if (!selectedFilename) {
-      setMessage(
-        isArabic
-          ? "يرجى اختيار مستند أولًا."
-          : "Please select a document first.",
-      );
+      setMessage("Please select a document first.");
       return;
     }
 
@@ -184,9 +122,7 @@ export default function Documents() {
 
     if (!token) {
       setMessage(
-        isArabic
-          ? "يرجى تسجيل الدخول أولًا لفهرسة المستند."
-          : "You are not logged in. Please login first to index this document.",
+        "You are not logged in. Please login first to index this document.",
       );
       return;
     }
@@ -213,34 +149,19 @@ export default function Documents() {
         localStorage.removeItem("username");
         localStorage.removeItem("user_role");
 
-        setMessage(
-          isArabic
-            ? "انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى."
-            : "Your session has expired. Please login again.",
-        );
-
+        setMessage("Your session has expired. Please login again.");
         return;
       }
 
       if (response.status === 403) {
-        setMessage(
-          isArabic
-            ? "ليس لديك صلاحية لفهرسة هذا المستند."
-            : "You do not have permission to index this document.",
-        );
-
+        setMessage("You do not have permission to index this document.");
         return;
       }
 
       if (!response.ok) {
         setMessage(
-          data.detail ||
-            data.message ||
-            (isArabic
-              ? "تعذر فهرسة المستند."
-              : "Unable to index the document."),
+          data.detail || data.message || "Unable to index the document.",
         );
-
         return;
       }
 
@@ -248,18 +169,12 @@ export default function Documents() {
 
       localStorage.setItem("filename", selectedFilename);
 
-      setMessage(
-        `${data.number_of_chunks} ${
-          isArabic ? "بنود تمت فهرستها." : "clauses indexed."
-        }`,
-      );
+      setMessage(`${data.message} - ${data.number_of_chunks} clauses indexed.`);
 
       await fetchDocuments();
     } catch {
       setMessage(
-        isArabic
-          ? "تعذر الاتصال بالخادم. تأكد من تشغيل الـ backend."
-          : "Unable to connect to the server. Please make sure the backend is running.",
+        "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
       setLoading(false);
@@ -268,11 +183,7 @@ export default function Documents() {
 
   const reviewDocument = async (selectedFilename) => {
     if (!selectedFilename) {
-      setMessage(
-        isArabic
-          ? "يرجى اختيار مستند أولًا."
-          : "Please select a document first.",
-      );
+      setMessage("Please select a document first.");
       return;
     }
 
@@ -280,11 +191,78 @@ export default function Documents() {
 
     if (!token) {
       setMessage(
-        isArabic
-          ? "يرجى تسجيل الدخول أولًا لمراجعة هذا المستند."
-          : "You are not logged in. Please login first to review this document.",
+        "You are not logged in. Please login first to view this review.",
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMessage("");
+
+      const response = await fetch(
+        `${API_URL}/documents/review/${encodeURIComponent(selectedFilename)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
       );
 
+      const data = await response.json();
+
+      if (response.status === 401) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("username");
+        localStorage.removeItem("user_role");
+        setMessage("Your session has expired. Please login again.");
+        return;
+      }
+
+      if (response.status === 404) {
+        setMessage("No saved review found for this document.");
+        return;
+      }
+
+      if (response.status === 403) {
+        setMessage("You do not have permission to view this review.");
+        return;
+      }
+
+      if (!response.ok) {
+        setMessage(data.detail || data.message || "Unable to load the review.");
+        return;
+      }
+
+      setFilename(selectedFilename);
+      localStorage.setItem("filename", selectedFilename);
+      setReview(data.review);
+      setMessage(
+        data.message ||
+          "Saved review loaded successfully. No new AI review was executed.",
+      );
+    } catch {
+      setMessage(
+        "Unable to connect to the server. Please make sure the backend is running.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runReviewIfNeeded = async (selectedFilename) => {
+    if (!selectedFilename) {
+      setMessage("Please select a document first.");
+      return;
+    }
+
+    const token = localStorage.getItem("access_token");
+
+    if (!token) {
+      setMessage(
+        "You are not logged in. Please login first to review this document.",
+      );
       return;
     }
 
@@ -308,56 +286,160 @@ export default function Documents() {
         localStorage.removeItem("access_token");
         localStorage.removeItem("username");
         localStorage.removeItem("user_role");
-
-        setMessage(
-          isArabic
-            ? "انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى."
-            : "Your session has expired. Please login again.",
-        );
-
+        setMessage("Your session has expired. Please login again.");
         return;
       }
 
       if (response.status === 403) {
-        setMessage(
-          isArabic
-            ? "ليس لديك صلاحية لمراجعة هذا المستند."
-            : "You do not have permission to review this document.",
-        );
-
+        setMessage("You do not have permission to review this document.");
         return;
       }
 
       if (!response.ok) {
         setMessage(
-          data.detail ||
-            data.message ||
-            (isArabic
-              ? "تعذر مراجعة المستند."
-              : "Unable to review this document."),
+          data.detail || data.message || "Unable to review this document.",
         );
-
         return;
       }
 
       setFilename(selectedFilename);
-
       localStorage.setItem("filename", selectedFilename);
-
       setReview(data.review);
 
       setMessage(
-        isArabic
-          ? "تمت مراجعة المستند بنجاح."
-          : "Document reviewed successfully.",
+        data.cached
+          ? "Existing review loaded. The AI workflow was not executed again."
+          : "New review completed and saved successfully.",
       );
 
       await fetchDocuments();
     } catch {
       setMessage(
-        isArabic
-          ? "تعذر الاتصال بالخادم. تأكد من تشغيل الـ backend."
-          : "Unable to connect to the server. Please make sure the backend is running.",
+        "Unable to connect to the server. Please make sure the backend is running.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deviationDocument = async (selectedFilename) => {
+    if (!selectedFilename) {
+      setMessage("Please select a document first.");
+      return;
+    }
+
+    const token = localStorage.getItem("access_token");
+
+    if (!token) {
+      setMessage(
+        "You are not logged in. Please login first to view deviation analysis.",
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMessage("");
+
+      // VIEW = read only. It never calls Gemini and never creates new data.
+      const response = await fetch(
+        `${API_URL}/documents/deviation/${encodeURIComponent(selectedFilename)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const data = await response.json();
+
+      if (response.status === 404) {
+        setDeviation(null);
+        setMessage(
+          "No saved deviation analysis found. Click 'Analyze Deviation' to create it.",
+        );
+        return;
+      }
+
+      if (response.status === 401) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("username");
+        localStorage.removeItem("user_role");
+        setMessage("Your session has expired. Please login again.");
+        return;
+      }
+
+      if (!response.ok) {
+        setMessage(
+          data.detail || data.message || "Unable to load deviation analysis.",
+        );
+        return;
+      }
+
+      setFilename(selectedFilename);
+      localStorage.setItem("filename", selectedFilename);
+      setDeviation(data);
+      setMessage("Saved deviation analysis loaded successfully.");
+    } catch {
+      setMessage(
+        "Unable to connect to the server. Please make sure the backend is running.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runDeviationIfNeeded = async (selectedFilename) => {
+    if (!selectedFilename) {
+      setMessage("Please select a document first.");
+      return;
+    }
+
+    const token = localStorage.getItem("access_token");
+
+    if (!token) {
+      setMessage(
+        "You are not logged in. Please login first to analyze deviation.",
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMessage("");
+
+      const response = await fetch(
+        `${API_URL}/documents/deviation/${encodeURIComponent(selectedFilename)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setMessage(
+          data.detail || data.message || "Unable to analyze deviation.",
+        );
+        return;
+      }
+
+      setFilename(selectedFilename);
+      localStorage.setItem("filename", selectedFilename);
+      setDeviation(data);
+
+      setMessage(
+        data.cached
+          ? "Existing deviation analysis loaded. No new AI analysis was executed."
+          : "Deviation analysis completed and saved successfully.",
+      );
+    } catch {
+      setMessage(
+        "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
       setLoading(false);
@@ -370,141 +452,14 @@ export default function Documents() {
     localStorage.setItem("filename", document.stored_filename);
 
     setReview(null);
+    setDeviation(null);
 
-    setMessage(
-      isArabic
-        ? `تم اختيار المستند: ${document.original_filename}`
-        : `Selected document: ${document.original_filename}`,
-    );
-  };
-
-  const deleteDocument = async (selectedFilename) => {
-    if (!selectedFilename) {
-      setMessage(
-        isArabic
-          ? "يرجى اختيار مستند أولًا."
-          : "Please select a document first.",
-      );
-
-      return;
-    }
-
-    const token = localStorage.getItem("access_token");
-
-    if (!token) {
-      setMessage(
-        isArabic
-          ? "يرجى تسجيل الدخول أولًا لحذف المستند."
-          : "You are not logged in. Please login first to delete this document.",
-      );
-
-      return;
-    }
-
-    const confirmed = window.confirm(
-      isArabic
-        ? "هل أنت متأكد من حذف هذا المستند؟ لا يمكن التراجع عن هذا الإجراء."
-        : "Are you sure you want to delete this document? This action cannot be undone.",
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setMessage("");
-      setReview(null);
-
-      const response = await fetch(
-        `${API_URL}/documents/${encodeURIComponent(selectedFilename)}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-      const data = await response.json();
-
-      if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("username");
-        localStorage.removeItem("user_role");
-        localStorage.removeItem("filename");
-
-        setMessage(
-          isArabic
-            ? "انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى."
-            : "Your session has expired. Please login again.",
-        );
-
-        return;
-      }
-
-      if (response.status === 403) {
-        setMessage(
-          isArabic
-            ? "فقط الـ Counsel يمكنه حذف المستندات."
-            : "Only counsel can delete documents.",
-        );
-
-        return;
-      }
-
-      if (response.status === 404) {
-        setMessage(
-          data.detail ||
-            (isArabic ? "المستند غير موجود." : "Document not found."),
-        );
-
-        return;
-      }
-
-      if (!response.ok) {
-        setMessage(
-          data.detail ||
-            data.message ||
-            (isArabic ? "تعذر حذف المستند." : "Unable to delete the document."),
-        );
-
-        return;
-      }
-
-      if (filename === selectedFilename) {
-        setFilename("");
-        localStorage.removeItem("filename");
-        setReview(null);
-      }
-
-      setMessage(
-        data.message ||
-          (isArabic
-            ? "تم حذف المستند بنجاح."
-            : "Document deleted successfully."),
-      );
-
-      await fetchDocuments();
-    } catch {
-      setMessage(
-        isArabic
-          ? "تعذر الاتصال بالخادم. تأكد من تشغيل الـ backend."
-          : "Unable to connect to the server. Please make sure the backend is running.",
-      );
-    } finally {
-      setLoading(false);
-    }
+    setMessage(`Selected document: ${document.original_filename}`);
   };
 
   const submitApproval = async (decision) => {
     if (!filename) {
-      setMessage(
-        isArabic
-          ? "يرجى اختيار مستند أولًا."
-          : "Please select a document first.",
-      );
-
+      setMessage("Please select a document first.");
       return;
     }
 
@@ -512,11 +467,8 @@ export default function Documents() {
 
     if (!token) {
       setMessage(
-        isArabic
-          ? "يرجى تسجيل الدخول أولًا للموافقة أو الرفض."
-          : "You are not logged in. Please login first to approve or reject this document.",
+        "You are not logged in. Please login first to approve or reject this document.",
       );
-
       return;
     }
 
@@ -525,14 +477,17 @@ export default function Documents() {
       setMessage("");
 
       const response = await fetch(
-        `${API_URL}/documents/approval/${encodeURIComponent(
-          filename,
-        )}?decision=${decision}`,
+        `${API_URL}/documents/approval/${encodeURIComponent(filename)}`,
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            decision,
+            comment: `Decision submitted by ${localStorage.getItem("username") || "user"}`,
+          }),
         },
       );
 
@@ -543,22 +498,14 @@ export default function Documents() {
         localStorage.removeItem("username");
         localStorage.removeItem("user_role");
 
-        setMessage(
-          isArabic
-            ? "انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى."
-            : "Your session has expired. Please login again.",
-        );
-
+        setMessage("Your session has expired. Please login again.");
         return;
       }
 
       if (response.status === 403) {
         setMessage(
-          isArabic
-            ? "ليس لديك صلاحية للموافقة أو الرفض."
-            : "You do not have permission to approve or reject this document.",
+          "You do not have permission to approve or reject this document.",
         );
-
         return;
       }
 
@@ -566,29 +513,19 @@ export default function Documents() {
         setMessage(
           data.detail ||
             data.message ||
-            (isArabic
-              ? "تعذر تنفيذ قرار الموافقة."
-              : "Unable to process the approval request."),
+            "Unable to process the approval request.",
         );
-
         return;
       }
 
-      setMessage(
-        data.message ||
-          (isArabic
-            ? "تم تنفيذ القرار بنجاح."
-            : "Approval decision submitted successfully."),
-      );
+      setMessage(data.message || "Approval decision submitted successfully.");
 
       setReview(null);
 
       await fetchDocuments();
     } catch {
       setMessage(
-        isArabic
-          ? "تعذر الاتصال بالخادم. تأكد من تشغيل الـ backend."
-          : "Unable to connect to the server. Please make sure the backend is running.",
+        "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
       setLoading(false);
@@ -610,27 +547,27 @@ export default function Documents() {
         return "bg-danger";
 
       case "uploaded":
-      default:
         return "bg-warning text-dark";
+
+      case "failed":
+        return "bg-danger";
+
+      default:
+        return "bg-secondary";
     }
   };
 
   return (
     <div className="dashboard">
-      {/* Header */}
       <div className="welcome">
-        <h2>{t("documents")}</h2>
+        <h2>Documents</h2>
 
-        <p>
-          {isArabic
-            ? "ارفع العقود وقم بفهرستها ومراجعتها وإدارتها."
-            : "Upload, index, review, and manage your legal contracts."}
-        </p>
+        <p>Upload, index, review, and manage your legal contracts.</p>
       </div>
 
       {/* Upload */}
       <div className="content-card mt-4">
-        <h5>{t("uploadContract")}</h5>
+        <h5>Upload Contract</h5>
 
         <input
           type="file"
@@ -640,56 +577,60 @@ export default function Documents() {
             setFile(event.target.files[0]);
             setMessage("");
             setReview(null);
+            setDeviation(null);
           }}
         />
 
-        <button
-          type="button"
-          className="btn btn-primary mt-3"
-          onClick={uploadDocument}
-          disabled={loading}
-        >
-          {loading
-            ? isArabic
-              ? "جاري التنفيذ..."
-              : "Processing..."
-            : t("uploadContract")}
-        </button>
+        <div className="d-flex gap-2 mt-3 flex-wrap">
+          <button
+            className="btn btn-primary px-4"
+            onClick={uploadDocument}
+            disabled={loading}
+          >
+            {loading ? "Processing..." : "Upload Contract"}
+          </button>
+
+          {file && (
+            <button
+              className="btn btn-outline-secondary"
+              onClick={() => {
+                setFile(null);
+                setMessage("File selection cleared.");
+              }}
+              disabled={loading}
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Documents */}
+      {/* All Documents from Database */}
       <div className="content-card mt-4">
         <div className="d-flex justify-content-between align-items-center">
-          <h5 className="mb-0">{t("myDocuments")}</h5>
+          <h5 className="mb-0">My Documents</h5>
 
           <button
-            type="button"
             className="btn btn-sm btn-outline-primary"
             onClick={fetchDocuments}
             disabled={loading}
           >
-            {t("refresh")}
+            Refresh
           </button>
         </div>
 
         {documents.length === 0 ? (
-          <p className="mt-4 text-muted">
-            {isArabic ? "لا توجد مستندات." : "No documents found."}
-          </p>
+          <p className="mt-4 text-muted">No documents found.</p>
         ) : (
           <div className="table-responsive mt-4">
             <table className="table table-bordered align-middle">
               <thead>
                 <tr>
-                  <th>{isArabic ? "المستند" : "Document"}</th>
-
-                  <th>{t("status")}</th>
-
-                  <th>{t("created")}</th>
-
-                  <th>{t("updated")}</th>
-
-                  <th>{isArabic ? "الإجراءات" : "Actions"}</th>
+                  <th>Document</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
 
@@ -700,8 +641,7 @@ export default function Documents() {
                       <strong>{document.original_filename}</strong>
 
                       <div className="small text-muted">
-                        {isArabic ? "اسم التخزين:" : "Stored:"}{" "}
-                        {document.stored_filename}
+                        Stored: {document.stored_filename}
                       </div>
                     </td>
 
@@ -726,52 +666,86 @@ export default function Documents() {
                     </td>
 
                     <td>
-                      <div className="d-flex gap-2 flex-wrap">
+                      <div className="d-flex gap-2 flex-wrap align-items-center">
                         <button
-                          type="button"
-                          className="btn btn-sm btn-outline-primary"
+                          className="btn btn-sm btn-outline-dark px-3"
                           onClick={() => selectDocument(document)}
                           disabled={loading}
                         >
-                          {t("select")}
+                          Select
                         </button>
 
-                        {document.status === "uploaded" && (
+                        {document.status === "failed" && (
                           <button
-                            type="button"
-                            className="btn btn-sm btn-secondary"
+                            className="btn btn-sm btn-outline-secondary px-3"
                             onClick={() =>
                               indexDocument(document.stored_filename)
                             }
                             disabled={loading}
                           >
-                            {t("index")}
+                            Retry Index
                           </button>
                         )}
 
                         {document.status === "indexed" && (
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-success"
-                            onClick={() =>
-                              reviewDocument(document.stored_filename)
-                            }
-                            disabled={loading}
-                          >
-                            {t("review")}
-                          </button>
+                          <>
+                            <button
+                              className="btn btn-sm btn-success px-3"
+                              onClick={() =>
+                                runReviewIfNeeded(document.stored_filename)
+                              }
+                              disabled={loading}
+                            >
+                              Review Contract
+                            </button>
+
+                            <button
+                              className="btn btn-sm btn-outline-secondary px-3"
+                              onClick={() =>
+                                runDeviationIfNeeded(document.stored_filename)
+                              }
+                              disabled={loading}
+                            >
+                              Analyze Deviation
+                            </button>
+                          </>
                         )}
 
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() =>
-                            deleteDocument(document.stored_filename)
-                          }
-                          disabled={loading}
-                        >
-                          {t("delete")}
-                        </button>
+                        {(document.status === "reviewed" ||
+                          document.status === "approved" ||
+                          document.status === "rejected") && (
+                          <>
+                            <button
+                              className="btn btn-sm btn-outline-success px-3"
+                              onClick={() =>
+                                reviewDocument(document.stored_filename)
+                              }
+                              disabled={loading}
+                            >
+                              View Review
+                            </button>
+
+                            <button
+                              className="btn btn-sm btn-outline-secondary px-3"
+                              onClick={() =>
+                                deviationDocument(document.stored_filename)
+                              }
+                              disabled={loading}
+                            >
+                              View Deviation
+                            </button>
+
+                            <button
+                              className="btn btn-sm btn-outline-primary px-3"
+                              onClick={() =>
+                                runDeviationIfNeeded(document.stored_filename)
+                              }
+                              disabled={loading}
+                            >
+                              Analyze Deviation
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -784,21 +758,34 @@ export default function Documents() {
 
       {/* Selected Document */}
       {filename && (
-        <div className="alert alert-info mt-4">
-          {isArabic ? "المستند المختار:" : "Selected document:"}{" "}
-          <strong>{filename}</strong>
+        <div className="alert alert-info mt-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            Selected document: <strong>{filename}</strong>
+          </div>
+          <button
+            className="btn btn-sm btn-outline-dark"
+            onClick={() => {
+              setFilename("");
+              localStorage.removeItem("filename");
+              setReview(null);
+              setDeviation(null);
+            }}
+            disabled={loading}
+          >
+            Clear Selection
+          </button>
         </div>
       )}
 
-      {/* Messages */}
+      {/* Message */}
       {message && (
         <div className="alert alert-light border mt-4">{message}</div>
       )}
 
-      {/* Review */}
+      {/* Review Result */}
       {review && (
         <div className="content-card mt-4">
-          <h5>{isArabic ? "مراجعة العقد" : "Contract Review"}</h5>
+          <h5>Contract Review</h5>
 
           {review.risks?.length > 0 ? (
             <div className="mt-3">
@@ -807,54 +794,104 @@ export default function Documents() {
                   <h6>{item.title}</h6>
 
                   <p>
-                    <strong>{isArabic ? "المخاطر:" : "Risk:"}</strong>{" "}
-                    {item.risk?.risk_level}
+                    <strong>Risk:</strong> {item.risk?.risk_level}
                   </p>
 
                   <p>
-                    <strong>{isArabic ? "السبب:" : "Reason:"}</strong>{" "}
-                    {item.risk?.reason}
+                    <strong>Reason:</strong> {item.risk?.reason}
                   </p>
 
                   <p>
-                    <strong>{isArabic ? "الدليل:" : "Evidence:"}</strong>{" "}
-                    {item.risk?.evidence}
+                    <strong>Evidence:</strong> {item.risk?.evidence}
                   </p>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-muted mt-3">
-              {isArabic ? "لم يتم العثور على مخاطر." : "No risk issues found."}
-            </p>
+            <p className="text-muted mt-3">No risk issues found.</p>
           )}
 
           {review.memo && (
             <div className="alert alert-secondary mt-4">
-              <h6>{t("riskMemo")}</h6>
+              <h6>Risk Memo</h6>
 
               <p className="mb-0">{review.memo}</p>
 
               <div className="d-flex gap-2 mt-4">
                 <button
-                  type="button"
                   className="btn btn-success"
                   onClick={() => submitApproval("approved")}
                   disabled={loading}
                 >
-                  {t("approve")}
+                  Approve
                 </button>
 
                 <button
-                  type="button"
                   className="btn btn-danger"
                   onClick={() => submitApproval("rejected")}
                   disabled={loading}
                 >
-                  {t("reject")}
+                  Reject
                 </button>
               </div>
+
+              <p className="small text-muted mt-3 mb-0">
+                A Counsel can change the current decision later. Each decision
+                is stored as a separate approval record.
+              </p>
             </div>
+          )}
+        </div>
+      )}
+
+      {deviation && (
+        <div className="content-card mt-4">
+          <h5>Deviation Analysis</h5>
+
+          {deviation.results?.length > 0 ? (
+            <div className="mt-3">
+              {deviation.results.map((item, index) => (
+                <div className="border rounded p-3 mb-3" key={index}>
+                  <h6>{item.title}</h6>
+
+                  {item.rule && (
+                    <p>
+                      <strong>Playbook Rule:</strong>{" "}
+                      {typeof item.rule === "string"
+                        ? item.rule
+                        : JSON.stringify(item.rule)}
+                    </p>
+                  )}
+
+                  {item.deviation && (
+                    <>
+                      <p>
+                        <strong>Deviation:</strong>{" "}
+                        {typeof item.deviation === "string"
+                          ? item.deviation
+                          : item.deviation.deviation
+                            ? "Yes"
+                            : "No"}
+                      </p>
+
+                      {item.deviation.reason && (
+                        <p>
+                          <strong>Reason:</strong> {item.deviation.reason}
+                        </p>
+                      )}
+                    </>
+                  )}
+
+                  {!item.rule && item.reason && (
+                    <p>
+                      <strong>Result:</strong> {item.reason}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted mt-3">No deviation results found.</p>
           )}
         </div>
       )}
