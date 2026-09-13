@@ -2,6 +2,10 @@ import re
 
 from sentence_transformers import SentenceTransformer
 
+from services.contract_expansions import CONTRACT_EXPANSIONS
+from services.contract_synonyms import SYNONYM_GROUPS
+from services.contract_terms import CONTRACT_Terms
+
 
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
@@ -26,157 +30,186 @@ def language_of(text):
     return "en"
 
 
+# ---------------------------------------------------------
+# Normalize Arabic text
+# ---------------------------------------------------------
+
+def normalize_arabic(text):
+    text = text.lower()
+
+    # Remove Arabic diacritics
+    text = re.sub(r"[\u064B-\u065F]", "", text)
+
+    # Normalize Arabic letters
+    text = text.replace("أ", "ا")
+    text = text.replace("إ", "ا")
+    text = text.replace("آ", "ا")
+    text = text.replace("ى", "ي")
+
+    return text
+
+
+# ---------------------------------------------------------
+# Query Expansion
+# ---------------------------------------------------------
+
 def expand_cross_lingual_query(query):
     """
-    Add Arabic legal terms to common English queries.
+    Expand common Arabic and English legal terms
+    to improve keyword retrieval.
 
-    This helps keyword retrieval when:
-    - the user asks in English
-    - the document is written in Arabic
+    Examples:
+
+    English:
+        salary
+        leave
+        termination
+
+    Arabic:
+        الراتب
+        الإجازات
+        انهاء العقد
     """
 
-    query_lower = query.lower()
+    query_lower = normalize_arabic(query)
 
-    expansions = {
-        "leave": "الإجازات الإجازة السنوية المرضية الرسمية",
-        "vacation": "الإجازات الإجازة السنوية",
-        "sick leave": "الإجازات المرضية",
-        "annual leave": "الإجازات السنوية",
-        "official leave": "الإجازات الرسمية",
+    expansions = CONTRACT_EXPANSIONS
 
-        "salary": "الراتب الأجر",
-        "pay": "الراتب الأجر",
+    expanded_terms = []
 
-        "probation": "فترة الاختبار",
-        "trial period": "فترة الاختبار",
+    # Longer phrases first
+    sorted_expansions = sorted(
+        expansions.items(),
+        key=lambda item: len(item[0]),
+        reverse=True
+    )
 
-        "termination": "إنهاء العقد إنهاء",
-        "terminate": "إنهاء العقد إنهاء",
+    for term, expansion in sorted_expansions:
 
-        "notice": "الإخطار إشعار",
-        "notice period": "مدة الإخطار فترة الإخطار",
+        if term in query_lower:
+            expanded_terms.append(expansion)
 
-        "confidentiality": "السرية حماية المعلومات",
-        "confidential information": "المعلومات السرية حماية المعلومات",
+    if expanded_terms:
 
-        "intellectual property": "الملكية الفكرية",
-
-        "working hours": "ساعات العمل",
-        "work hours": "ساعات العمل",
-
-        "workplace": "مكان العمل مقر العمل",
-        "work location": "مكان العمل مقر العمل",
-
-        "remote work": "العمل عن بعد العمل عن بُعد",
-
-        "employee": "الموظف الطرف الثاني",
-        "employer": "صاحب العمل الطرف الأول",
-
-        "contract": "العقد",
-        "agreement": "العقد الاتفاق",
-
-        "dispute": "النزاع النزاعات",
-        "disputes": "النزاع النزاعات",
-
-        "benefits": "المزايا الحوافز المكافآت",
-        "bonus": "الحوافز المكافآت",
-        "bonuses": "الحوافز المكافآت",
-    }
-
-    arabic_terms = []
-
-    for english_term, arabic_terms_text in expansions.items():
-
-        if english_term in query_lower:
-            arabic_terms.append(arabic_terms_text)
-
-    if arabic_terms:
-        return f"{query} {' '.join(arabic_terms)}"
+        return (
+            f"{query} "
+            + " ".join(expanded_terms)
+        )
 
     return query
 
 
+# ---------------------------------------------------------
+# Keyword Score
+# ---------------------------------------------------------
+
 def keyword_score(query, text):
+    query = normalize_arabic(query)
+    text = normalize_arabic(text)
+
     query_words = set(
-        re.findall(r"\w+", query.lower())
+        re.findall(r"\w+", query)
     )
 
     text_words = set(
-        re.findall(r"\w+", text.lower())
+        re.findall(r"\w+", text)
     )
 
     if not query_words:
         return 0.0
 
-    matches = query_words.intersection(text_words)
+    # Arabic legal synonym groups
+    synonym_groups = SYNONYM_GROUPS
 
-    # Basic keyword score
-    base_score = len(matches) / len(query_words)
-
-    # Important legal terms get additional weight
-    important_terms = {
-        "الإجازات",
-        "الإجازة",
-        "السنوية",
-        "المرضية",
-        "الرسمية",
-        "الموظف",
-        "الراتب",
-        "العقد",
-        "إنهاء",
-        "السرية",
-        "الملكية",
-        "الفكرية",
-    }
-
-    important_matches = matches.intersection(
-        important_terms
+    # Direct word matches
+    direct_matches = query_words.intersection(
+        text_words
     )
 
-    bonus = 0.05 * len(important_matches)
+    score = len(direct_matches)
+
+    # Check synonym groups
+    for group in synonym_groups:
+
+        query_has_group = bool(
+            query_words.intersection(group)
+        )
+
+        text_has_group = bool(
+            text_words.intersection(group)
+        )
+
+        if query_has_group and text_has_group:
+            score += 2
+
+    # Normalize score
+    denominator = max(
+        len(query_words) * 2,
+        1
+    )
 
     return min(
-        base_score + bonus,
+        score / denominator,
         1.0
     )
 
+# ---------------------------------------------------------
+# Hybrid Search
+# ---------------------------------------------------------
 
 def hybrid_search(
     collection,
     query,
     top_k=5,
-    language=None
+    language=None,
+    filename=None
 ):
-    # Keep the original user question
+
+    # Original question
     original_query = query
 
-    # Add Arabic terms for keyword retrieval
-    expanded_query = expand_cross_lingual_query(query)
+    # Expanded query for keyword search
+    expanded_query = (
+        expand_cross_lingual_query(
+            query
+        )
+    )
 
     model = get_embedding_model()
 
-    # ---------------------------------------
+    # ==========================================
     # 1. Dense Search
-    # ---------------------------------------
+    # ==========================================
+
     # IMPORTANT:
-    # Use the original question for the embedding model.
-    # This preserves the multilingual semantic meaning.
-    query_embedding = model.encode(original_query)
+    # Use original query for embeddings.
+    query_embedding = model.encode(
+        original_query
+    )
 
-    # ---------------------------------------
-    # Optional metadata filter
-    # ---------------------------------------
+    # ==========================================
+    # Optional Language Filter
+    # ==========================================
 
-    where = None
+    # Optional metadata filters
+    filters = []
 
     if language in {"ar", "en"}:
-        where = {
-            "language": language
-        }
+        filters.append({"language": language})
 
-    # ---------------------------------------
-    # 2. Dense Search from ChromaDB
-    # ---------------------------------------
+    if filename:
+        filters.append({"filename": filename})
+
+    if len(filters) == 1:
+        where = filters[0]
+    elif len(filters) > 1:
+        where = {"$and": filters}
+    else:
+        where = None
+
+    # ==========================================
+    # 2. Dense Search
+    # ==========================================
 
     dense_results = collection.query(
         query_embeddings=[
@@ -186,62 +219,93 @@ def hybrid_search(
         where=where
     )
 
-    dense_documents = dense_results["documents"][0]
-    dense_ids = dense_results["ids"][0]
-    dense_distances = dense_results["distances"][0]
-    dense_metadata = dense_results["metadatas"][0]
+    dense_documents = (
+        dense_results["documents"][0]
+    )
 
-    # ---------------------------------------
-    # 3. Keyword Search
-    # ---------------------------------------
+    dense_ids = (
+        dense_results["ids"][0]
+    )
+
+    dense_distances = (
+        dense_results["distances"][0]
+    )
+
+    dense_metadata = (
+        dense_results["metadatas"][0]
+    )
+
+    # ==========================================
+    # 3. Get All Documents For Keyword Search
+    # ==========================================
 
     all_data = collection.get(
         where=where
     )
 
-    all_documents = all_data.get(
-        "documents",
-        []
+    all_documents = (
+        all_data.get(
+            "documents",
+            []
+        )
     )
 
-    all_ids = all_data.get(
-        "ids",
-        []
+    all_ids = (
+        all_data.get(
+            "ids",
+            []
+        )
     )
 
-    all_metadata = all_data.get(
-        "metadatas",
-        []
+    all_metadata = (
+        all_data.get(
+            "metadatas",
+            []
+        )
     )
 
-    # ---------------------------------------
-    # 4. Combine Dense + Keyword Results
-    # ---------------------------------------
+    # ==========================================
+    # 4. Combine Results
+    # ==========================================
 
     results = {}
 
-    # Add dense search results
-    for i, doc_id in enumerate(dense_ids):
+    # ------------------------------------------
+    # Dense results
+    # ------------------------------------------
 
-        distance = dense_distances[i]
+    for i, doc_id in enumerate(
+        dense_ids
+    ):
 
-        dense_score = 1 / (1 + distance)
+        distance = (
+            dense_distances[i]
+        )
+
+        dense_score = (
+            1
+            /
+            (1 + distance)
+        )
 
         results[doc_id] = {
             "id": doc_id,
             "text": dense_documents[i],
             "metadata": dense_metadata[i],
             "dense_score": dense_score,
-            "keyword_score": 0.0
+            "keyword_score": 0.0,
         }
 
-    # Add keyword scores
-    for i, doc_id in enumerate(all_ids):
+    # ------------------------------------------
+    # Keyword results
+    # ------------------------------------------
+
+    for i, doc_id in enumerate(
+        all_ids
+    ):
 
         text = all_documents[i]
 
-        # Use expanded query for keyword matching.
-        # This helps English -> Arabic retrieval.
         score = keyword_score(
             expanded_query,
             text
@@ -254,82 +318,109 @@ def hybrid_search(
                 "text": text,
                 "metadata": all_metadata[i],
                 "dense_score": 0.0,
-                "keyword_score": score
+                "keyword_score": score,
             }
 
         else:
 
-            results[doc_id]["keyword_score"] = score
+            results[
+                doc_id
+            ][
+                "keyword_score"
+            ] = score
 
-    # ---------------------------------------
+    # ==========================================
     # 5. Fusion
-    # ---------------------------------------
+    # ==========================================
 
     for item in results.values():
 
-        # Cross-lingual retrieval:
-        # give equal importance to semantic
-        # and keyword evidence.
-        item["fusion_score"] = (
+        fusion_score = (
             0.5 * item["dense_score"]
             +
             0.5 * item["keyword_score"]
         )
 
-    # ---------------------------------------
+        # Strong keyword evidence can compensate
+        # when semantic similarity is very low.
+        if item["keyword_score"] >= 0.25:
+            fusion_score = max(
+                fusion_score,
+                item["keyword_score"]
+            )
+
+        # IMPORTANT:
+        # This must stay inside the loop so every result
+        # receives its own fusion_score.
+        item["fusion_score"] = fusion_score
+
+    # ==========================================
     # 6. Sort
-    # ---------------------------------------
+    # ==========================================
 
     sorted_results = sorted(
         results.values(),
-        key=lambda x: x["fusion_score"],
+        key=lambda x:
+            x["fusion_score"],
         reverse=True
     )
 
-    # ---------------------------------------
-    # 7. Return Final Results
-    # ---------------------------------------
+    # ==========================================
+    # 7. Return Results
+    # ==========================================
 
     return [
+
         {
             "chunk_id": item["id"],
 
-            "filename": item["metadata"].get(
-                "filename",
-                ""
-            ),
+            "filename":
+                item["metadata"].get(
+                    "filename",
+                    ""
+                ),
 
-            "chunk_index": item["metadata"].get(
-                "chunk_index",
-                0
-            ),
+            "chunk_index":
+                item["metadata"].get(
+                    "chunk_index",
+                    0
+                ),
 
-            "section": item["metadata"].get(
-                "section",
-                ""
-            ),
+            "section":
+                item["metadata"].get(
+                    "section",
+                    ""
+                ),
 
-            "language": item["metadata"].get(
-                "language",
-                language_of(item["text"])
-            ),
+            "language":
+                item["metadata"].get(
+                    "language",
+                    language_of(
+                        item["text"]
+                    )
+                ),
 
             "text": item["text"],
 
-            "dense_score": round(
-                item["dense_score"],
-                4
-            ),
+            "dense_score":
+                round(
+                    item["dense_score"],
+                    4
+                ),
 
-            "keyword_score": round(
-                item["keyword_score"],
-                4
-            ),
+            "keyword_score":
+                round(
+                    item["keyword_score"],
+                    4
+                ),
 
-            "fusion_score": round(
-                item["fusion_score"],
-                4
-            )
+            "fusion_score":
+                round(
+                    item["fusion_score"],
+                    4
+                ),
         }
-        for item in sorted_results[:top_k]
+
+        for item
+        in sorted_results[:top_k]
     ]

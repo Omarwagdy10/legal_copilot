@@ -211,22 +211,84 @@ def index_document(filename:str, db:Session=Depends(get_db), user:User=Depends(g
     }
 
 @app.get('/documents/search')
-def search_documents(query:str, user:User=Depends(get_current_user)):
-    return {'query':query,'results':hybrid_search(collection,query,top_k=5)}
+def search_documents(
+    query: str,
+    filename: str | None = None,
+    user: User = Depends(get_current_user),
+):
+    """
+    Search the indexed documents.
+
+    If filename is provided, retrieval is restricted to that
+    specific document only.
+    """
+    return {
+        'query': query,
+        'filename': filename,
+        'results': hybrid_search(
+            collection,
+            query,
+            top_k=5,
+            filename=filename,
+        ),
+    }
+
 
 @app.get('/ask')
-def ask_question(query:str, user:User=Depends(get_current_user)):
-    results=hybrid_search(collection,query,top_k=5)
+def ask_question(
+    query: str,
+    filename: str | None = None,
+    user: User = Depends(get_current_user),
+):
+    """
+    Answer a question using only the selected document when
+    filename is provided.
+    """
+
+    results = hybrid_search(
+        collection,
+        query,
+        top_k=5,
+        filename=filename,
+    )
+
     if not results or results[0]['fusion_score'] < settings.min_evidence_score:
-        return {'question':query,'answer':'Not enough information in the document.','sources':[]}
-    context='\n\n'.join(f"[{i+1}] {r['text']}" for i,r in enumerate(results))
+        return {
+            'question': query,
+            'filename': filename,
+            'answer': 'Not enough information in the document.',
+            'sources': [],
+        }
+
+    context = '\n\n'.join(
+        f"[{i+1}] {r['text']}"
+        for i, r in enumerate(results)
+    )
+
+    selected_document_text = (
+        f"You must answer ONLY from the selected document: {filename}."
+        if filename
+        else
+        "No specific document was selected. Answer only from the supplied context."
+    )
+
     prompt = (
-        f"You are a legal assistant. Answer ONLY from the supplied context. "
-        f"Respect the language of the user. If evidence is insufficient, say exactly: Not enough information in the document.\n\n"
+        f"You are a legal assistant. {selected_document_text} "
+        f"Answer ONLY from the supplied context. "
+        f"Respect the language of the user. "
+        f"Do not use information from outside the context. "
+        f"If the context is insufficient, say exactly: Not enough information in the document.\n\n"
         f"Context:\n{context}\n\nQuestion:\n{query}"
     )
-    answer=generate_ai_response(prompt)
-    return {'question':query,'answer':answer,'sources':results}
+
+    answer = generate_ai_response(prompt)
+
+    return {
+        'question': query,
+        'filename': filename,
+        'answer': answer,
+        'sources': results,
+    }
 
 
 def serialize_deviation_results(filename, rows):
