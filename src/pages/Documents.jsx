@@ -1,17 +1,26 @@
 import { useEffect, useState } from "react";
+import { useLanguage } from "../context/LanguageContext";
 
 const API_URL = "http://127.0.0.1:8000";
 
 export default function Documents() {
+  const { t, language, setLanguage } = useLanguage();
+
   const [file, setFile] = useState(null);
   const [filename, setFilename] = useState("");
-
   const [documents, setDocuments] = useState([]);
   const [review, setReview] = useState(null);
   const [deviation, setDeviation] = useState(null);
-
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const isArabic = language === "ar";
+
+  const auth = () => ({
+    Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+  });
+
+  const statusText = (status) => t(`status_${status}`) || status;
 
   const fetchDocuments = async () => {
     const token = localStorage.getItem("access_token");
@@ -20,42 +29,33 @@ export default function Documents() {
       setDocuments([]);
       setFilename("");
       localStorage.removeItem("filename");
-      setMessage("Please login first to view your documents.");
+      setMessage(t("login_first"));
       return;
     }
 
     try {
       const response = await fetch(`${API_URL}/documents`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: auth(),
       });
 
       const data = await response.json();
 
       if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("username");
-        localStorage.removeItem("user_role");
-        localStorage.removeItem("filename");
-
+        localStorage.clear();
         setDocuments([]);
         setFilename("");
-        setMessage("Your session has expired. Please login again.");
+        setMessage(t("session_expired"));
         return;
       }
 
       if (!response.ok) {
-        setMessage(data.detail || data.message || "Unable to load documents.");
+        setMessage(data.detail || data.message || t("load_documents_error"));
         return;
       }
 
       setDocuments(data.documents || []);
     } catch {
-      setMessage(
-        "Unable to connect to the server. Please make sure the backend is running.",
-      );
+      setMessage(t("server_error"));
     }
   };
 
@@ -65,7 +65,7 @@ export default function Documents() {
 
   const uploadDocument = async () => {
     if (!file) {
-      setMessage("Please select a PDF file first.");
+      setMessage(t("select_pdf"));
       return;
     }
 
@@ -78,35 +78,27 @@ export default function Documents() {
       setReview(null);
       setDeviation(null);
 
-      const token = localStorage.getItem("access_token");
-
       const response = await fetch(`${API_URL}/documents/upload`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: auth(),
         body: formData,
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setMessage(
-          data.detail || data.message || "Unable to upload the document.",
-        );
+        setMessage(data.detail || data.message || t("upload_error"));
         return;
       }
 
       setFilename(data.filename);
       localStorage.setItem("filename", data.filename);
 
-      setMessage(data.message || "Document uploaded successfully.");
+      setMessage(data.message || t("upload_success"));
 
       await fetchDocuments();
     } catch {
-      setMessage(
-        "Unable to connect to the server. Please make sure the backend is running.",
-      );
+      setMessage(t("server_error"));
     } finally {
       setLoading(false);
     }
@@ -114,16 +106,14 @@ export default function Documents() {
 
   const indexDocument = async (selectedFilename) => {
     if (!selectedFilename) {
-      setMessage("Please select a document first.");
+      setMessage(t("select_document"));
       return;
     }
 
     const token = localStorage.getItem("access_token");
 
     if (!token) {
-      setMessage(
-        "You are not logged in. Please login first to index this document.",
-      );
+      setMessage(t("login_index"));
       return;
     }
 
@@ -136,46 +126,38 @@ export default function Documents() {
         `${API_URL}/documents/index/${encodeURIComponent(selectedFilename)}`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: auth(),
         },
       );
 
       const data = await response.json();
 
       if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("username");
-        localStorage.removeItem("user_role");
-
-        setMessage("Your session has expired. Please login again.");
+        localStorage.clear();
+        setMessage(t("session_expired"));
         return;
       }
 
       if (response.status === 403) {
-        setMessage("You do not have permission to index this document.");
+        setMessage(t("no_index_permission"));
         return;
       }
 
       if (!response.ok) {
-        setMessage(
-          data.detail || data.message || "Unable to index the document.",
-        );
+        setMessage(data.detail || data.message || t("index_error"));
         return;
       }
 
       setFilename(selectedFilename);
-
       localStorage.setItem("filename", selectedFilename);
 
-      setMessage(`${data.message} - ${data.number_of_chunks} clauses indexed.`);
+      setMessage(
+        `${data.message} - ${data.number_of_chunks} ${t("clauses_indexed")}`,
+      );
 
       await fetchDocuments();
     } catch {
-      setMessage(
-        "Unable to connect to the server. Please make sure the backend is running.",
-      );
+      setMessage(t("server_error"));
     } finally {
       setLoading(false);
     }
@@ -183,16 +165,14 @@ export default function Documents() {
 
   const reviewDocument = async (selectedFilename) => {
     if (!selectedFilename) {
-      setMessage("Please select a document first.");
+      setMessage(t("select_document"));
       return;
     }
 
     const token = localStorage.getItem("access_token");
 
     if (!token) {
-      setMessage(
-        "You are not logged in. Please login first to view this review.",
-      );
+      setMessage(t("login_view_review"));
       return;
     }
 
@@ -203,66 +183,53 @@ export default function Documents() {
       const response = await fetch(
         `${API_URL}/documents/review/${encodeURIComponent(selectedFilename)}`,
         {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: auth(),
         },
       );
 
       const data = await response.json();
 
       if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("username");
-        localStorage.removeItem("user_role");
-        setMessage("Your session has expired. Please login again.");
+        localStorage.clear();
+        setMessage(t("session_expired"));
         return;
       }
 
       if (response.status === 404) {
-        setMessage("No saved review found for this document.");
+        setMessage(t("no_saved_review"));
         return;
       }
 
       if (response.status === 403) {
-        setMessage("You do not have permission to view this review.");
+        setMessage(t("no_review_permission"));
         return;
       }
 
       if (!response.ok) {
-        setMessage(data.detail || data.message || "Unable to load the review.");
+        setMessage(data.detail || data.message || t("review_load_error"));
         return;
       }
 
       setFilename(selectedFilename);
-      localStorage.setItem("filename", selectedFilename);
       setReview(data.review);
-      setMessage(
-        data.message ||
-          "Saved review loaded successfully. No new AI review was executed.",
-      );
+      setMessage(data.message || t("saved_review_loaded"));
     } catch {
-      setMessage(
-        "Unable to connect to the server. Please make sure the backend is running.",
-      );
+      setMessage(t("server_error"));
     } finally {
       setLoading(false);
     }
   };
 
-  const runReviewIfNeeded = async (selectedFilename) => {
+  const runReview = async (selectedFilename) => {
     if (!selectedFilename) {
-      setMessage("Please select a document first.");
+      setMessage(t("select_document"));
       return;
     }
 
     const token = localStorage.getItem("access_token");
 
     if (!token) {
-      setMessage(
-        "You are not logged in. Please login first to review this document.",
-      );
+      setMessage(t("login_review"));
       return;
     }
 
@@ -274,66 +241,51 @@ export default function Documents() {
         `${API_URL}/documents/review/${encodeURIComponent(selectedFilename)}`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: auth(),
         },
       );
 
       const data = await response.json();
 
       if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("username");
-        localStorage.removeItem("user_role");
-        setMessage("Your session has expired. Please login again.");
+        localStorage.clear();
+        setMessage(t("session_expired"));
         return;
       }
 
       if (response.status === 403) {
-        setMessage("You do not have permission to review this document.");
+        setMessage(t("no_review_permission"));
         return;
       }
 
       if (!response.ok) {
-        setMessage(
-          data.detail || data.message || "Unable to review this document.",
-        );
+        setMessage(data.detail || data.message || t("review_error"));
         return;
       }
 
       setFilename(selectedFilename);
-      localStorage.setItem("filename", selectedFilename);
       setReview(data.review);
 
-      setMessage(
-        data.cached
-          ? "Existing review loaded. The AI workflow was not executed again."
-          : "New review completed and saved successfully.",
-      );
+      setMessage(data.cached ? t("existing_review") : t("new_review"));
 
       await fetchDocuments();
     } catch {
-      setMessage(
-        "Unable to connect to the server. Please make sure the backend is running.",
-      );
+      setMessage(t("server_error"));
     } finally {
       setLoading(false);
     }
   };
 
-  const deviationDocument = async (selectedFilename) => {
+  const viewDeviation = async (selectedFilename) => {
     if (!selectedFilename) {
-      setMessage("Please select a document first.");
+      setMessage(t("select_document"));
       return;
     }
 
     const token = localStorage.getItem("access_token");
 
     if (!token) {
-      setMessage(
-        "You are not logged in. Please login first to view deviation analysis.",
-      );
+      setMessage(t("login_deviation_view"));
       return;
     }
 
@@ -341,14 +293,12 @@ export default function Documents() {
       setLoading(true);
       setMessage("");
 
-      // VIEW = read only. It never calls Gemini and never creates new data.
       const response = await fetch(
-        `${API_URL}/documents/deviation/${encodeURIComponent(selectedFilename)}`,
+        `${API_URL}/documents/deviation/${encodeURIComponent(
+          selectedFilename,
+        )}`,
         {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: auth(),
         },
       );
 
@@ -356,52 +306,41 @@ export default function Documents() {
 
       if (response.status === 404) {
         setDeviation(null);
-        setMessage(
-          "No saved deviation analysis found. Click 'Analyze Deviation' to create it.",
-        );
+        setMessage(t("no_saved_deviation"));
         return;
       }
 
       if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("username");
-        localStorage.removeItem("user_role");
-        setMessage("Your session has expired. Please login again.");
+        localStorage.clear();
+        setMessage(t("session_expired"));
         return;
       }
 
       if (!response.ok) {
-        setMessage(
-          data.detail || data.message || "Unable to load deviation analysis.",
-        );
+        setMessage(data.detail || data.message || t("deviation_load_error"));
         return;
       }
 
       setFilename(selectedFilename);
-      localStorage.setItem("filename", selectedFilename);
       setDeviation(data);
-      setMessage("Saved deviation analysis loaded successfully.");
+      setMessage(t("saved_deviation_loaded"));
     } catch {
-      setMessage(
-        "Unable to connect to the server. Please make sure the backend is running.",
-      );
+      setMessage(t("server_error"));
     } finally {
       setLoading(false);
     }
   };
 
-  const runDeviationIfNeeded = async (selectedFilename) => {
+  const runDeviation = async (selectedFilename) => {
     if (!selectedFilename) {
-      setMessage("Please select a document first.");
+      setMessage(t("select_document"));
       return;
     }
 
     const token = localStorage.getItem("access_token");
 
     if (!token) {
-      setMessage(
-        "You are not logged in. Please login first to analyze deviation.",
-      );
+      setMessage(t("login_deviation"));
       return;
     }
 
@@ -410,37 +349,28 @@ export default function Documents() {
       setMessage("");
 
       const response = await fetch(
-        `${API_URL}/documents/deviation/${encodeURIComponent(selectedFilename)}`,
+        `${API_URL}/documents/deviation/${encodeURIComponent(
+          selectedFilename,
+        )}`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: auth(),
         },
       );
 
       const data = await response.json();
 
       if (!response.ok) {
-        setMessage(
-          data.detail || data.message || "Unable to analyze deviation.",
-        );
+        setMessage(data.detail || data.message || t("deviation_error"));
         return;
       }
 
       setFilename(selectedFilename);
-      localStorage.setItem("filename", selectedFilename);
       setDeviation(data);
 
-      setMessage(
-        data.cached
-          ? "Existing deviation analysis loaded. No new AI analysis was executed."
-          : "Deviation analysis completed and saved successfully.",
-      );
+      setMessage(data.cached ? t("existing_deviation") : t("new_deviation"));
     } catch {
-      setMessage(
-        "Unable to connect to the server. Please make sure the backend is running.",
-      );
+      setMessage(t("server_error"));
     } finally {
       setLoading(false);
     }
@@ -454,21 +384,19 @@ export default function Documents() {
     setReview(null);
     setDeviation(null);
 
-    setMessage(`Selected document: ${document.original_filename}`);
+    setMessage(`${t("selected_document")} ${document.original_filename}`);
   };
 
   const submitApproval = async (decision) => {
     if (!filename) {
-      setMessage("Please select a document first.");
+      setMessage(t("select_document"));
       return;
     }
 
     const token = localStorage.getItem("access_token");
 
     if (!token) {
-      setMessage(
-        "You are not logged in. Please login first to approve or reject this document.",
-      );
+      setMessage(t("login_approval"));
       return;
     }
 
@@ -481,12 +409,14 @@ export default function Documents() {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
+            ...auth(),
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
             decision,
-            comment: `Decision submitted by ${localStorage.getItem("username") || "user"}`,
+            comment: `Decision submitted by ${
+              localStorage.getItem("username") || "user"
+            }`,
           }),
         },
       );
@@ -494,87 +424,65 @@ export default function Documents() {
       const data = await response.json();
 
       if (response.status === 401) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("username");
-        localStorage.removeItem("user_role");
-
-        setMessage("Your session has expired. Please login again.");
+        localStorage.clear();
+        setMessage(t("session_expired"));
         return;
       }
 
       if (response.status === 403) {
-        setMessage(
-          "You do not have permission to approve or reject this document.",
-        );
+        setMessage(t("no_approval_permission"));
         return;
       }
 
       if (!response.ok) {
-        setMessage(
-          data.detail ||
-            data.message ||
-            "Unable to process the approval request.",
-        );
+        setMessage(data.detail || data.message || t("approval_error"));
         return;
       }
 
-      setMessage(data.message || "Approval decision submitted successfully.");
+      setMessage(data.message || t("approval_success"));
 
       setReview(null);
-
       await fetchDocuments();
     } catch {
-      setMessage(
-        "Unable to connect to the server. Please make sure the backend is running.",
-      );
+      setMessage(t("server_error"));
     } finally {
       setLoading(false);
     }
   };
 
   const getStatusClass = (status) => {
-    switch (status) {
-      case "indexed":
-        return "bg-primary";
+    const classes = {
+      indexed: "bg-primary",
+      reviewed: "bg-success",
+      approved: "bg-success",
+      rejected: "bg-danger",
+      uploaded: "bg-warning text-dark",
+      failed: "bg-danger",
+    };
 
-      case "reviewed":
-        return "bg-success";
-
-      case "approved":
-        return "bg-success";
-
-      case "rejected":
-        return "bg-danger";
-
-      case "uploaded":
-        return "bg-warning text-dark";
-
-      case "failed":
-        return "bg-danger";
-
-      default:
-        return "bg-secondary";
-    }
+    return classes[status] || "bg-secondary";
   };
 
   return (
-    <div className="dashboard">
-      <div className="welcome">
-        <h2>Documents</h2>
+    <div className="dashboard" dir={isArabic ? "rtl" : "ltr"}>
 
-        <p>Upload, index, review, and manage your legal contracts.</p>
+
+      {/* Header */}
+      <div className="welcome">
+        <h2>{t("documents")}</h2>
+        <p>{t("documents_description")}</p>
       </div>
 
       {/* Upload */}
       <div className="content-card mt-4">
-        <h5>Upload Contract</h5>
+        <h5>{t("upload_contract")}</h5>
 
         <input
           type="file"
           accept=".pdf"
           className="form-control mt-3"
-          onChange={(event) => {
-            setFile(event.target.files[0]);
+          onChange={(e) => {
+            setFile(e.target.files[0]);
             setMessage("");
             setReview(null);
             setDeviation(null);
@@ -587,7 +495,7 @@ export default function Documents() {
             onClick={uploadDocument}
             disabled={loading}
           >
-            {loading ? "Processing..." : "Upload Contract"}
+            {loading ? t("processing") : t("upload_contract")}
           </button>
 
           {file && (
@@ -595,42 +503,42 @@ export default function Documents() {
               className="btn btn-outline-secondary"
               onClick={() => {
                 setFile(null);
-                setMessage("File selection cleared.");
+                setMessage(t("file_cleared"));
               }}
               disabled={loading}
             >
-              Clear
+              {t("clear")}
             </button>
           )}
         </div>
       </div>
 
-      {/* All Documents from Database */}
+      {/* Documents */}
       <div className="content-card mt-4">
         <div className="d-flex justify-content-between align-items-center">
-          <h5 className="mb-0">My Documents</h5>
+          <h5 className="mb-0">{t("my_documents")}</h5>
 
           <button
             className="btn btn-sm btn-outline-primary"
             onClick={fetchDocuments}
             disabled={loading}
           >
-            Refresh
+            {t("refresh")}
           </button>
         </div>
 
         {documents.length === 0 ? (
-          <p className="mt-4 text-muted">No documents found.</p>
+          <p className="mt-4 text-muted">{t("no_documents")}</p>
         ) : (
           <div className="table-responsive mt-4">
             <table className="table table-bordered align-middle">
               <thead>
                 <tr>
-                  <th>Document</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Updated</th>
-                  <th>Actions</th>
+                  <th>{t("document")}</th>
+                  <th>{t("status")}</th>
+                  <th>{t("created")}</th>
+                  <th>{t("updated")}</th>
+                  <th>{t("actions")}</th>
                 </tr>
               </thead>
 
@@ -641,7 +549,7 @@ export default function Documents() {
                       <strong>{document.original_filename}</strong>
 
                       <div className="small text-muted">
-                        Stored: {document.stored_filename}
+                        {t("stored")}: {document.stored_filename}
                       </div>
                     </td>
 
@@ -649,100 +557,104 @@ export default function Documents() {
                       <span
                         className={`badge ${getStatusClass(document.status)}`}
                       >
-                        {document.status}
+                        {statusText(document.status)}
                       </span>
                     </td>
 
                     <td>
                       {document.created_at
-                        ? new Date(document.created_at).toLocaleString()
+                        ? new Date(document.created_at).toLocaleString(
+                            isArabic ? "ar-EG" : "en-US",
+                          )
                         : "-"}
                     </td>
 
                     <td>
                       {document.updated_at
-                        ? new Date(document.updated_at).toLocaleString()
+                        ? new Date(document.updated_at).toLocaleString(
+                            isArabic ? "ar-EG" : "en-US",
+                          )
                         : "-"}
                     </td>
 
                     <td>
-                      <div className="d-flex gap-2 flex-wrap align-items-center">
+                      <div className="d-flex gap-2 flex-wrap">
                         <button
-                          className="btn btn-sm btn-outline-dark px-3"
+                          className="btn btn-sm btn-outline-dark"
                           onClick={() => selectDocument(document)}
                           disabled={loading}
                         >
-                          Select
+                          {t("select")}
                         </button>
 
                         {document.status === "failed" && (
                           <button
-                            className="btn btn-sm btn-outline-secondary px-3"
+                            className="btn btn-sm btn-outline-secondary"
                             onClick={() =>
                               indexDocument(document.stored_filename)
                             }
                             disabled={loading}
                           >
-                            Retry Index
+                            {t("upload_again")}
                           </button>
                         )}
 
                         {document.status === "indexed" && (
                           <>
                             <button
-                              className="btn btn-sm btn-success px-3"
+                              className="btn btn-sm btn-success"
                               onClick={() =>
-                                runReviewIfNeeded(document.stored_filename)
+                                runReview(document.stored_filename)
                               }
                               disabled={loading}
                             >
-                              Review Contract
+                              {t("review_contract")}
                             </button>
 
                             <button
-                              className="btn btn-sm btn-outline-secondary px-3"
+                              className="btn btn-sm btn-outline-secondary"
                               onClick={() =>
-                                runDeviationIfNeeded(document.stored_filename)
+                                runDeviation(document.stored_filename)
                               }
                               disabled={loading}
                             >
-                              Analyze Deviation
+                              {t("analyze_deviation")}
                             </button>
                           </>
                         )}
 
-                        {(document.status === "reviewed" ||
-                          document.status === "approved" ||
-                          document.status === "rejected") && (
+                        {["reviewed", "approved", "rejected"].includes(
+                          document.status,
+                        ) && (
                           <>
                             <button
-                              className="btn btn-sm btn-outline-success px-3"
+                              className="btn btn-sm btn-outline-success"
                               onClick={() =>
                                 reviewDocument(document.stored_filename)
                               }
                               disabled={loading}
                             >
-                              View Review
+                              {t("view_review")}
                             </button>
 
                             <button
-                              className="btn btn-sm btn-outline-secondary px-3"
+                              className="btn btn-sm btn-outline-secondary"
                               onClick={() =>
-                                deviationDocument(document.stored_filename)
+                                viewDeviation(document.stored_filename)
                               }
                               disabled={loading}
                             >
-                              View Deviation
+                              {t("view_deviation")}
                             </button>
 
                             <button
-                              className="btn btn-sm btn-outline-primary px-3"
+                              className="btn btn-sm btn-outline-primary"
                               onClick={() =>
-                                runDeviationIfNeeded(document.stored_filename)
+                                runDeviation(document.stored_filename)
                               }
                               disabled={loading}
                             >
-                              Analyze Deviation
+                              {t("analyze_deviation")}
                             </button>
                           </>
                         )}
@@ -756,12 +668,13 @@ export default function Documents() {
         )}
       </div>
 
-      {/* Selected Document */}
+      {/* Selected */}
       {filename && (
         <div className="alert alert-info mt-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div>
-            Selected document: <strong>{filename}</strong>
+            {t("selected_document")}: <strong>{filename}</strong>
           </div>
+
           <button
             className="btn btn-sm btn-outline-dark"
             onClick={() => {
@@ -772,7 +685,7 @@ export default function Documents() {
             }}
             disabled={loading}
           >
-            Clear Selection
+            {t("clear_selection")}
           </button>
         </div>
       )}
@@ -782,10 +695,10 @@ export default function Documents() {
         <div className="alert alert-light border mt-4">{message}</div>
       )}
 
-      {/* Review Result */}
+      {/* Review */}
       {review && (
         <div className="content-card mt-4">
-          <h5>Contract Review</h5>
+          <h5>{t("contract_review")}</h5>
 
           {review.risks?.length > 0 ? (
             <div className="mt-3">
@@ -794,28 +707,28 @@ export default function Documents() {
                   <h6>{item.title}</h6>
 
                   <p>
-                    <strong>Risk:</strong> {item.risk?.risk_level}
+                    <strong>{t("risk")}:</strong> {item.risk?.risk_level}
                   </p>
 
                   <p>
-                    <strong>Reason:</strong> {item.risk?.reason}
+                    <strong>{t("reason")}:</strong> {item.risk?.reason}
                   </p>
 
                   <p>
-                    <strong>Evidence:</strong> {item.risk?.evidence}
+                    <strong>{t("evidence")}:</strong> {item.risk?.evidence}
                   </p>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-muted mt-3">No risk issues found.</p>
+            <p className="text-muted mt-3">{t("no_risk")}</p>
           )}
 
           {review.memo && (
             <div className="alert alert-secondary mt-4">
-              <h6>Risk Memo</h6>
+              <h6>{t("risk_memo")}</h6>
 
-              <p className="mb-0">{review.memo}</p>
+              <p>{review.memo}</p>
 
               <div className="d-flex gap-2 mt-4">
                 <button
@@ -823,7 +736,7 @@ export default function Documents() {
                   onClick={() => submitApproval("approved")}
                   disabled={loading}
                 >
-                  Approve
+                  {t("approve")}
                 </button>
 
                 <button
@@ -831,22 +744,20 @@ export default function Documents() {
                   onClick={() => submitApproval("rejected")}
                   disabled={loading}
                 >
-                  Reject
+                  {t("reject")}
                 </button>
               </div>
 
-              <p className="small text-muted mt-3 mb-0">
-                A Counsel can change the current decision later. Each decision
-                is stored as a separate approval record.
-              </p>
+              <p className="small text-muted mt-3 mb-0">{t("approval_note")}</p>
             </div>
           )}
         </div>
       )}
 
+      {/* Deviation */}
       {deviation && (
         <div className="content-card mt-4">
-          <h5>Deviation Analysis</h5>
+          <h5>{t("deviation_analysis")}</h5>
 
           {deviation.results?.length > 0 ? (
             <div className="mt-3">
@@ -856,7 +767,7 @@ export default function Documents() {
 
                   {item.rule && (
                     <p>
-                      <strong>Playbook Rule:</strong>{" "}
+                      <strong>{t("playbook_rule")}:</strong>{" "}
                       {typeof item.rule === "string"
                         ? item.rule
                         : JSON.stringify(item.rule)}
@@ -866,17 +777,18 @@ export default function Documents() {
                   {item.deviation && (
                     <>
                       <p>
-                        <strong>Deviation:</strong>{" "}
+                        <strong>{t("deviation")}:</strong>{" "}
                         {typeof item.deviation === "string"
                           ? item.deviation
                           : item.deviation.deviation
-                            ? "Yes"
-                            : "No"}
+                            ? t("yes")
+                            : t("no")}
                       </p>
 
                       {item.deviation.reason && (
                         <p>
-                          <strong>Reason:</strong> {item.deviation.reason}
+                          <strong>{t("reason")}:</strong>{" "}
+                          {item.deviation.reason}
                         </p>
                       )}
                     </>
@@ -884,14 +796,14 @@ export default function Documents() {
 
                   {!item.rule && item.reason && (
                     <p>
-                      <strong>Result:</strong> {item.reason}
+                      <strong>{t("result")}:</strong> {item.reason}
                     </p>
                   )}
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-muted mt-3">No deviation results found.</p>
+            <p className="text-muted mt-3">{t("no_deviation")}</p>
           )}
         </div>
       )}

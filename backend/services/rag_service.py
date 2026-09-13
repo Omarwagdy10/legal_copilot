@@ -19,7 +19,81 @@ def get_embedding_model():
 
 def language_of(text):
     arabic_chars = re.findall(r"[\u0600-\u06FF]", text)
-    return "ar" if arabic_chars else "en"
+
+    if arabic_chars:
+        return "ar"
+
+    return "en"
+
+
+def expand_cross_lingual_query(query):
+    """
+    Add Arabic legal terms to common English queries.
+
+    This helps keyword retrieval when:
+    - the user asks in English
+    - the document is written in Arabic
+    """
+
+    query_lower = query.lower()
+
+    expansions = {
+        "leave": "الإجازات الإجازة السنوية المرضية الرسمية",
+        "vacation": "الإجازات الإجازة السنوية",
+        "sick leave": "الإجازات المرضية",
+        "annual leave": "الإجازات السنوية",
+        "official leave": "الإجازات الرسمية",
+
+        "salary": "الراتب الأجر",
+        "pay": "الراتب الأجر",
+
+        "probation": "فترة الاختبار",
+        "trial period": "فترة الاختبار",
+
+        "termination": "إنهاء العقد إنهاء",
+        "terminate": "إنهاء العقد إنهاء",
+
+        "notice": "الإخطار إشعار",
+        "notice period": "مدة الإخطار فترة الإخطار",
+
+        "confidentiality": "السرية حماية المعلومات",
+        "confidential information": "المعلومات السرية حماية المعلومات",
+
+        "intellectual property": "الملكية الفكرية",
+
+        "working hours": "ساعات العمل",
+        "work hours": "ساعات العمل",
+
+        "workplace": "مكان العمل مقر العمل",
+        "work location": "مكان العمل مقر العمل",
+
+        "remote work": "العمل عن بعد العمل عن بُعد",
+
+        "employee": "الموظف الطرف الثاني",
+        "employer": "صاحب العمل الطرف الأول",
+
+        "contract": "العقد",
+        "agreement": "العقد الاتفاق",
+
+        "dispute": "النزاع النزاعات",
+        "disputes": "النزاع النزاعات",
+
+        "benefits": "المزايا الحوافز المكافآت",
+        "bonus": "الحوافز المكافآت",
+        "bonuses": "الحوافز المكافآت",
+    }
+
+    arabic_terms = []
+
+    for english_term, arabic_terms_text in expansions.items():
+
+        if english_term in query_lower:
+            arabic_terms.append(arabic_terms_text)
+
+    if arabic_terms:
+        return f"{query} {' '.join(arabic_terms)}"
+
+    return query
 
 
 def keyword_score(query, text):
@@ -36,17 +110,62 @@ def keyword_score(query, text):
 
     matches = query_words.intersection(text_words)
 
-    return len(matches) / len(query_words)
+    # Basic keyword score
+    base_score = len(matches) / len(query_words)
+
+    # Important legal terms get additional weight
+    important_terms = {
+        "الإجازات",
+        "الإجازة",
+        "السنوية",
+        "المرضية",
+        "الرسمية",
+        "الموظف",
+        "الراتب",
+        "العقد",
+        "إنهاء",
+        "السرية",
+        "الملكية",
+        "الفكرية",
+    }
+
+    important_matches = matches.intersection(
+        important_terms
+    )
+
+    bonus = 0.05 * len(important_matches)
+
+    return min(
+        base_score + bonus,
+        1.0
+    )
 
 
-def hybrid_search(collection, query, top_k=5, language=None):
+def hybrid_search(
+    collection,
+    query,
+    top_k=5,
+    language=None
+):
+    # Keep the original user question
+    original_query = query
+
+    # Add Arabic terms for keyword retrieval
+    expanded_query = expand_cross_lingual_query(query)
 
     model = get_embedding_model()
-    query_embedding = model.encode(query)
 
-    # -----------------------------
+    # ---------------------------------------
+    # 1. Dense Search
+    # ---------------------------------------
+    # IMPORTANT:
+    # Use the original question for the embedding model.
+    # This preserves the multilingual semantic meaning.
+    query_embedding = model.encode(original_query)
+
+    # ---------------------------------------
     # Optional metadata filter
-    # -----------------------------
+    # ---------------------------------------
 
     where = None
 
@@ -55,12 +174,14 @@ def hybrid_search(collection, query, top_k=5, language=None):
             "language": language
         }
 
-    # -----------------------------
-    # 1. Dense Search
-    # -----------------------------
+    # ---------------------------------------
+    # 2. Dense Search from ChromaDB
+    # ---------------------------------------
 
     dense_results = collection.query(
-        query_embeddings=[query_embedding.tolist()],
+        query_embeddings=[
+            query_embedding.tolist()
+        ],
         n_results=top_k,
         where=where
     )
@@ -70,24 +191,36 @@ def hybrid_search(collection, query, top_k=5, language=None):
     dense_distances = dense_results["distances"][0]
     dense_metadata = dense_results["metadatas"][0]
 
-    # -----------------------------
-    # 2. Keyword Search
-    # -----------------------------
+    # ---------------------------------------
+    # 3. Keyword Search
+    # ---------------------------------------
 
     all_data = collection.get(
         where=where
     )
 
-    all_documents = all_data.get("documents", [])
-    all_ids = all_data.get("ids", [])
-    all_metadata = all_data.get("metadatas", [])
+    all_documents = all_data.get(
+        "documents",
+        []
+    )
 
-    # -----------------------------
-    # 3. Combine scores
-    # -----------------------------
+    all_ids = all_data.get(
+        "ids",
+        []
+    )
+
+    all_metadata = all_data.get(
+        "metadatas",
+        []
+    )
+
+    # ---------------------------------------
+    # 4. Combine Dense + Keyword Results
+    # ---------------------------------------
 
     results = {}
 
+    # Add dense search results
     for i, doc_id in enumerate(dense_ids):
 
         distance = dense_distances[i]
@@ -102,12 +235,15 @@ def hybrid_search(collection, query, top_k=5, language=None):
             "keyword_score": 0.0
         }
 
+    # Add keyword scores
     for i, doc_id in enumerate(all_ids):
 
         text = all_documents[i]
 
+        # Use expanded query for keyword matching.
+        # This helps English -> Arabic retrieval.
         score = keyword_score(
-            query,
+            expanded_query,
             text
         )
 
@@ -125,21 +261,24 @@ def hybrid_search(collection, query, top_k=5, language=None):
 
             results[doc_id]["keyword_score"] = score
 
-    # -----------------------------
-    # 4. Fusion
-    # -----------------------------
+    # ---------------------------------------
+    # 5. Fusion
+    # ---------------------------------------
 
     for item in results.values():
 
+        # Cross-lingual retrieval:
+        # give equal importance to semantic
+        # and keyword evidence.
         item["fusion_score"] = (
-            0.7 * item["dense_score"]
+            0.5 * item["dense_score"]
             +
-            0.3 * item["keyword_score"]
+            0.5 * item["keyword_score"]
         )
 
-    # -----------------------------
-    # 5. Sort
-    # -----------------------------
+    # ---------------------------------------
+    # 6. Sort
+    # ---------------------------------------
 
     sorted_results = sorted(
         results.values(),
@@ -147,38 +286,46 @@ def hybrid_search(collection, query, top_k=5, language=None):
         reverse=True
     )
 
-    # -----------------------------
-    # 6. Final results
-    # -----------------------------
+    # ---------------------------------------
+    # 7. Return Final Results
+    # ---------------------------------------
 
     return [
         {
             "chunk_id": item["id"],
+
             "filename": item["metadata"].get(
                 "filename",
                 ""
             ),
+
             "chunk_index": item["metadata"].get(
                 "chunk_index",
                 0
             ),
+
             "section": item["metadata"].get(
                 "section",
                 ""
             ),
+
             "language": item["metadata"].get(
                 "language",
                 language_of(item["text"])
             ),
+
             "text": item["text"],
+
             "dense_score": round(
                 item["dense_score"],
                 4
             ),
+
             "keyword_score": round(
                 item["keyword_score"],
                 4
             ),
+
             "fusion_score": round(
                 item["fusion_score"],
                 4
