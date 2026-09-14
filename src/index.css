@@ -206,4 +206,91 @@ body {
 .quick-action:hover {
   background: #f3f4f6;
 }
-.login-page{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f5f7fb}.login-card{width:420px;background:#fff;padding:32px;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.08)}.login-card h2{margin-bottom:8px}.quick-action{color:#111827}.text-end small{display:block}.
+.login-page{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f5f7fb}.login-card{width:420px;background:#fff;padding:32px;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.08)}.login-card h2{margin-bottom:8px}.quick-action{color:#111827}.text-end small{display:block}
+
+/* =========================
+   RTL / LTR Support
+   ========================= */
+
+/* RTL */
+html[dir="rtl"] .app-layout {
+  direction: rtl;
+}
+
+html[dir="rtl"] .sidebar {
+  left: auto;
+  right: 0;
+}
+
+html[dir="rtl"] .main-area {
+  margin-left: 0;
+  margin-right: 250px;
+}
+
+html[dir="rtl"] .navbar {
+  direction: rtl;
+  text-align: right;
+}
+
+html[dir="rtl"] .user-info {
+  flex-direction: row;
+}
+
+html[dir="rtl"] .page-content,
+html[dir="rtl"] .content-card,
+html[dir="rtl"] .welcome {
+  text-align: right;
+}
+
+html[dir="rtl"] .quick-action {
+  text-align: right;
+}
+
+html[dir="rtl"] .nav-link {
+  flex-direction: row;
+  text-align: right;
+}
+
+html[dir="rtl"] .card-header {
+  direction: rtl;
+}
+
+html[dir="rtl"] .contract-item {
+  direction: rtl;
+}
+
+html[dir="rtl"] table {
+  direction: rtl;
+  text-align: right;
+}
+
+
+/* LTR */
+html[dir="ltr"] .app-layout {
+  direction: ltr;
+}
+
+html[dir="ltr"] .sidebar {
+  left: 0;
+  right: auto;
+}
+
+html[dir="ltr"] .main-area {
+  margin-left: 250px;
+  margin-right: 0;
+}
+
+html[dir="ltr"] .navbar {
+  direction: ltr;
+  text-align: left;
+}
+
+html[dir="ltr"] .page-content,
+html[dir="ltr"] .content-card,
+html[dir="ltr"] .welcome {
+  text-align: left;
+}
+
+html[dir="ltr"] .quick-action {
+  text-align: left;
+}

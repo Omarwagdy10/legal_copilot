@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLanguage } from "../context/LanguageContext";
 
 const API_URL = "http://127.0.0.1:8000";
 
@@ -9,6 +10,11 @@ const buttonStyles = {
     background: "#eef2f7",
     color: "#334155",
     border: "1px solid #d9e0e8",
+  },
+  delete: {
+    background: "#fff1f2",
+    color: "#b42318",
+    border: "1px solid #fecdd3",
   },
   retry: {
     background: "#f1f5f9",
@@ -52,6 +58,15 @@ function ActionButton({ children, style, onClick, disabled }) {
 }
 
 export default function Documents() {
+  const { language } = useLanguage();
+  const isArabic = language === "ar";
+  const tr = (en, ar) => (isArabic ? ar : en);
+
+  useEffect(() => {
+    document.documentElement.dir = isArabic ? "rtl" : "ltr";
+    document.documentElement.lang = isArabic ? "ar" : "en";
+  }, [isArabic]);
+
   const [file, setFile] = useState(null);
   const [filename, setFilename] = useState("");
   const [documents, setDocuments] = useState([]);
@@ -61,6 +76,154 @@ export default function Documents() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [processType, setProcessType] = useState("");
+  const [popup, setPopup] = useState({
+    open: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
+
+  const getUserFriendlyMessage = (value) => {
+    if (!value) return "";
+
+    const message = String(value);
+    const msg = message.toLowerCase();
+
+    if (msg.includes("clause extractor")) {
+      return tr(
+        "We couldn't extract the contract clauses. Please check the PDF and try again.",
+        "تعذر استخراج بنود العقد. من فضلك تأكد من ملف الـ PDF وحاول مرة أخرى.",
+      );
+    }
+
+    if (msg.includes("memo drafter")) {
+      return tr(
+        "We couldn't generate the legal review report. Please try again.",
+        "تعذر إنشاء تقرير المراجعة القانونية. من فضلك حاول مرة أخرى.",
+      );
+    }
+
+    if (msg.includes("risk assessor")) {
+      return tr(
+        "We couldn't analyze the risks in this contract. Please try again.",
+        "تعذر تحليل مخاطر هذا العقد. من فضلك حاول مرة أخرى.",
+      );
+    }
+
+    if (
+      msg.includes("quota") ||
+      msg.includes("resource_exhausted") ||
+      msg.includes("rate limit")
+    ) {
+      return tr(
+        "The AI service is temporarily unavailable because its usage limit has been reached. Please try again later.",
+        "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا بسبب الوصول إلى حد الاستخدام. من فضلك حاول لاحقًا.",
+      );
+    }
+
+    if (msg.includes("connection") || msg.includes("connect to the server")) {
+      return tr(
+        "We couldn't connect to the server. Please make sure the backend is running and try again.",
+        "تعذر الاتصال بالخادم. تأكد من تشغيل الـ backend وحاول مرة أخرى.",
+      );
+    }
+
+    if (msg.includes("not authenticated") || msg.includes("401")) {
+      return tr(
+        "Your session has expired. Please log in again.",
+        "انتهت صلاحية الجلسة. من فضلك سجّل الدخول مرة أخرى.",
+      );
+    }
+
+    if (msg.includes("permission") || msg.includes("403")) {
+      return tr(
+        "You don't have permission to perform this action.",
+        "ليس لديك صلاحية لتنفيذ هذا الإجراء.",
+      );
+    }
+
+    if (msg.includes("no saved review")) {
+      return tr(
+        "No saved review is available for this document yet. Please run Review Contract first.",
+        "لا توجد مراجعة محفوظة لهذا المستند حتى الآن. من فضلك شغّل مراجعة العقد أولًا.",
+      );
+    }
+
+    if (msg.includes("no saved deviation")) {
+      return tr(
+        "No saved deviation analysis is available for this document yet. Please run Analyze Deviation first.",
+        "لا يوجد تحليل انحراف محفوظ لهذا المستند حتى الآن. من فضلك شغّل تحليل الانحراف أولًا.",
+      );
+    }
+
+    if (msg.startsWith("review failed")) {
+      return tr(
+        "We couldn't complete the contract review. Please try again.",
+        "تعذر إكمال مراجعة العقد. من فضلك حاول مرة أخرى.",
+      );
+    }
+
+    if (msg.startsWith("deviation failed")) {
+      return tr(
+        "We couldn't complete the deviation analysis. Please try again.",
+        "تعذر إكمال تحليل الانحراف. من فضلك حاول مرة أخرى.",
+      );
+    }
+
+    if (msg.includes("delete") && msg.includes("403")) {
+      return tr(
+        "You do not have permission to delete this document.",
+        "ليس لديك صلاحية لحذف هذا المستند.",
+      );
+    }
+
+    if (msg.includes("document uploaded successfully")) {
+      return tr("Document uploaded successfully.", "تم رفع المستند بنجاح.");
+    }
+
+    if (msg.includes("document deleted successfully")) {
+      return tr("Document deleted successfully.", "تم حذف المستند بنجاح.");
+    }
+
+    if (msg.includes("review completed successfully")) {
+      return tr("Review completed successfully.", "تمت مراجعة العقد بنجاح.");
+    }
+
+    if (msg.includes("existing review loaded")) {
+      return tr(
+        "Existing review loaded. The AI workflow was not executed again.",
+        "تم تحميل المراجعة الموجودة بالفعل، ولم يتم تشغيل الذكاء الاصطناعي مرة أخرى.",
+      );
+    }
+
+    return message;
+  };
+
+  const showMessage = (value, type = "info") => {
+    const text = getUserFriendlyMessage(value);
+    setMessage(text);
+
+    if (!text) {
+      setPopup({ open: false, title: "", message: "", type: "info" });
+      return;
+    }
+
+    const looksLikeError =
+      /failed|error|unable|cannot|permission|expired|no saved|not enough|couldn't|could not|تعذر|فشل|صلاحية|انتهت|لا توجد|لا يوجد/i.test(
+        text,
+      );
+    const finalType = type === "error" || looksLikeError ? "error" : "info";
+
+    setPopup({
+      open: true,
+      title:
+        finalType === "error"
+          ? tr("Error", "خطأ")
+          : tr("Information", "معلومة"),
+      message: text,
+      type: finalType,
+    });
+  };
 
   const userRole = (localStorage.getItem("user_role") || "").toLowerCase();
   const canReview = ["reviewer", "counsel"].includes(userRole);
@@ -70,7 +233,7 @@ export default function Documents() {
       setDocuments([]);
       setFilename("");
       localStorage.removeItem("filename");
-      setMessage("Please login first to view your documents.");
+      showMessage("Please login first to view your documents.");
       return;
     }
 
@@ -86,18 +249,21 @@ export default function Documents() {
         );
         setDocuments([]);
         setFilename("");
-        setMessage("Your session has expired. Please login again.");
+        showMessage("Your session has expired. Please login again.");
         return;
       }
 
       if (!response.ok) {
-        setMessage(data.detail || data.message || "Unable to load documents.");
+        showMessage(
+          data.detail || data.message || "Unable to load documents.",
+          "error",
+        );
         return;
       }
 
       setDocuments(data.documents || []);
     } catch {
-      setMessage(
+      showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
       );
     }
@@ -108,14 +274,14 @@ export default function Documents() {
   }, []);
 
   const uploadDocument = async () => {
-    if (!file) return setMessage("Please select a PDF file first.");
+    if (!file) return showMessage("Please select a PDF file first.");
 
     const formData = new FormData();
     formData.append("file", file);
 
     try {
       setLoading(true);
-      setMessage("");
+      showMessage("");
       setReview(null);
       setDeviation(null);
       setActiveView(null);
@@ -128,18 +294,19 @@ export default function Documents() {
       const data = await response.json();
 
       if (!response.ok) {
-        setMessage(
+        showMessage(
           data.detail || data.message || "Unable to upload the document.",
+          "error",
         );
         return;
       }
 
       setFilename(data.filename);
       localStorage.setItem("filename", data.filename);
-      setMessage(data.message || "Document uploaded successfully.");
+      showMessage(data.message || "Document uploaded successfully.");
       await fetchDocuments();
     } catch {
-      setMessage(
+      showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
@@ -150,12 +317,12 @@ export default function Documents() {
 
   const indexDocument = async (selectedFilename) => {
     if (!selectedFilename) {
-      setMessage("Please select a document first.");
+      showMessage("Please select a document first.");
       return;
     }
 
     if (!token()) {
-      setMessage(
+      showMessage(
         "You are not logged in. Please login first to index this document.",
       );
       return;
@@ -164,7 +331,7 @@ export default function Documents() {
     try {
       setLoading(true);
       setProcessType("index");
-      setMessage("Indexing process is running... Please wait.");
+      showMessage("Indexing process is running... Please wait.");
       setReview(null);
       setDeviation(null);
       setActiveView(null);
@@ -186,18 +353,19 @@ export default function Documents() {
           localStorage.removeItem(key),
         );
 
-        setMessage("Your session has expired. Please login again.");
+        showMessage("Your session has expired. Please login again.");
         return;
       }
 
       if (response.status === 403) {
-        setMessage("You do not have permission to index this document.");
+        showMessage("You do not have permission to index this document.");
         return;
       }
 
       if (!response.ok) {
-        setMessage(
+        showMessage(
           data.detail || data.message || "Unable to index the document.",
+          "error",
         );
         return;
       }
@@ -205,7 +373,7 @@ export default function Documents() {
       setFilename(selectedFilename);
       localStorage.setItem("filename", selectedFilename);
 
-      setMessage(
+      showMessage(
         `${data.message} - ${data.number_of_chunks} clauses indexed. Reloading the page...`,
       );
 
@@ -213,7 +381,7 @@ export default function Documents() {
         window.location.reload();
       }, 700);
     } catch {
-      setMessage(
+      showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
@@ -223,16 +391,17 @@ export default function Documents() {
   };
 
   const reviewDocument = async (selectedFilename) => {
-    if (!selectedFilename) return setMessage("Please select a document first.");
+    if (!selectedFilename)
+      return showMessage("Please select a document first.");
     if (!token())
-      return setMessage(
+      return showMessage(
         "You are not logged in. Please login first to view this review.",
       );
 
     try {
       setLoading(true);
       setProcessType("review");
-      setMessage("Review process is running... Please wait.");
+      showMessage("Review process is running... Please wait.");
 
       const response = await fetch(
         `${API_URL}/documents/review/${encodeURIComponent(selectedFilename)}`,
@@ -244,17 +413,18 @@ export default function Documents() {
         ["access_token", "username", "user_role"].forEach((k) =>
           localStorage.removeItem(k),
         );
-        setMessage("Your session has expired. Please login again.");
+        showMessage("Your session has expired. Please login again.");
         return;
       }
 
       if (response.status === 404)
-        return setMessage("No saved review found for this document.");
+        return showMessage("No saved review found for this document.");
       if (response.status === 403)
-        return setMessage("You do not have permission to view this review.");
+        return showMessage("You do not have permission to view this review.");
       if (!response.ok)
-        return setMessage(
+        return showMessage(
           data.detail || data.message || "Unable to load the review.",
+          "error",
         );
 
       setFilename(selectedFilename);
@@ -262,9 +432,9 @@ export default function Documents() {
       setReview(data.review);
       setDeviation(null);
       setActiveView("review");
-      setMessage(data.message || "Saved review loaded successfully.");
+      showMessage(data.message || "Saved review loaded successfully.");
     } catch {
-      setMessage(
+      showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
@@ -274,16 +444,17 @@ export default function Documents() {
   };
 
   const runReviewIfNeeded = async (selectedFilename) => {
-    if (!selectedFilename) return setMessage("Please select a document first.");
+    if (!selectedFilename)
+      return showMessage("Please select a document first.");
     if (!token())
-      return setMessage(
+      return showMessage(
         "You are not logged in. Please login first to review this document.",
       );
 
     try {
       setLoading(true);
       setProcessType("review");
-      setMessage("Review process is running... Please wait.");
+      showMessage("Review process is running... Please wait.");
 
       const response = await fetch(
         `${API_URL}/documents/review/${encodeURIComponent(selectedFilename)}`,
@@ -298,17 +469,18 @@ export default function Documents() {
         ["access_token", "username", "user_role"].forEach((k) =>
           localStorage.removeItem(k),
         );
-        setMessage("Your session has expired. Please login again.");
+        showMessage("Your session has expired. Please login again.");
         return;
       }
 
       if (response.status === 403)
-        return setMessage(
+        return showMessage(
           "You do not have permission to review this document.",
         );
       if (!response.ok)
-        return setMessage(
+        return showMessage(
           data.detail || data.message || "Unable to review this document.",
+          "error",
         );
 
       setFilename(selectedFilename);
@@ -320,11 +492,11 @@ export default function Documents() {
       const msg = data.cached
         ? "Existing review loaded. The AI workflow was not executed again."
         : "Review completed successfully. Reloading the page...";
-      setMessage(msg);
+      showMessage(msg);
 
       if (!data.cached) setTimeout(() => window.location.reload(), 700);
     } catch {
-      setMessage(
+      showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
@@ -334,14 +506,16 @@ export default function Documents() {
   };
 
   const deviationDocument = async (selectedFilename) => {
-    if (!selectedFilename) return setMessage("Please select a document first.");
+    if (!selectedFilename)
+      return showMessage("Please select a document first.");
     if (!token())
-      return setMessage(
+      return showMessage(
         "You are not logged in. Please login first to view deviation analysis.",
       );
 
     try {
       setLoading(true);
+      setProcessType("deviation");
 
       const response = await fetch(
         `${API_URL}/documents/deviation/${encodeURIComponent(selectedFilename)}`,
@@ -351,7 +525,7 @@ export default function Documents() {
 
       if (response.status === 404) {
         setDeviation(null);
-        return setMessage(
+        return showMessage(
           "No saved deviation analysis found. Click 'Analyze Deviation' to create it.",
         );
       }
@@ -360,12 +534,13 @@ export default function Documents() {
         ["access_token", "username", "user_role"].forEach((k) =>
           localStorage.removeItem(k),
         );
-        return setMessage("Your session has expired. Please login again.");
+        return showMessage("Your session has expired. Please login again.");
       }
 
       if (!response.ok) {
-        return setMessage(
+        return showMessage(
           data.detail || data.message || "Unable to load deviation analysis.",
+          "error",
         );
       }
 
@@ -374,9 +549,9 @@ export default function Documents() {
       setDeviation(data);
       setReview(null);
       setActiveView("deviation");
-      setMessage("Saved deviation analysis loaded successfully.");
+      showMessage("Saved deviation analysis loaded successfully.");
     } catch {
-      setMessage(
+      showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
@@ -386,16 +561,17 @@ export default function Documents() {
   };
 
   const runDeviationIfNeeded = async (selectedFilename) => {
-    if (!selectedFilename) return setMessage("Please select a document first.");
+    if (!selectedFilename)
+      return showMessage("Please select a document first.");
     if (!token())
-      return setMessage(
+      return showMessage(
         "You are not logged in. Please login first to analyze deviation.",
       );
 
     try {
       setLoading(true);
       setProcessType("deviation");
-      setMessage("Deviation analysis is running... Please wait.");
+      showMessage("Deviation analysis is running... Please wait.");
 
       const response = await fetch(
         `${API_URL}/documents/deviation/${encodeURIComponent(selectedFilename)}`,
@@ -407,8 +583,9 @@ export default function Documents() {
       const data = await response.json();
 
       if (!response.ok) {
-        setMessage(
+        showMessage(
           data.detail || data.message || "Unable to analyze deviation.",
+          "error",
         );
         return;
       }
@@ -422,12 +599,81 @@ export default function Documents() {
       const msg = data.cached
         ? "Existing deviation analysis loaded. No new AI analysis was executed."
         : "Deviation analysis completed successfully. Reloading the page...";
-      setMessage(msg);
+      showMessage(msg);
 
       if (!data.cached) setTimeout(() => window.location.reload(), 700);
     } catch {
-      setMessage(
+      showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
+      );
+    } finally {
+      setLoading(false);
+      setProcessType("");
+    }
+  };
+
+  const deleteDocument = async (document) => {
+    if (!document?.stored_filename) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${document.original_filename}"?`,
+    );
+    if (!confirmed) return;
+
+    if (!token()) {
+      showMessage("You are not logged in. Please log in again.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setProcessType("delete");
+
+      const response = await fetch(
+        `${API_URL}/documents/${encodeURIComponent(document.stored_filename)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token()}` },
+        },
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.status === 401) {
+        ["access_token", "username", "user_role", "filename"].forEach((key) =>
+          localStorage.removeItem(key),
+        );
+        showMessage("Your session has expired. Please log in again.");
+        return;
+      }
+
+      if (response.status === 403) {
+        showMessage("You don't have permission to delete this document.");
+        return;
+      }
+
+      if (!response.ok) {
+        showMessage(
+          data.detail ||
+            data.message ||
+            "We couldn't delete this document. Please try again.",
+        );
+        return;
+      }
+
+      if (filename === document.stored_filename) {
+        setFilename("");
+        localStorage.removeItem("filename");
+        setReview(null);
+        setDeviation(null);
+        setActiveView(null);
+      }
+
+      await fetchDocuments();
+      showMessage(data.message || "The document was deleted successfully.");
+    } catch {
+      showMessage(
+        "We couldn't connect to the server. Please make sure the backend is running and try again.",
       );
     } finally {
       setLoading(false);
@@ -441,19 +687,21 @@ export default function Documents() {
     setReview(null);
     setDeviation(null);
     setActiveView(null);
-    setMessage(`Selected document: ${document.original_filename}`);
+    showMessage(
+      `${tr("Selected document:", "المستند المحدد:")} ${document.original_filename}`,
+    );
   };
 
   const submitApproval = async (decision) => {
-    if (!filename) return setMessage("Please select a document first.");
+    if (!filename) return showMessage("Please select a document first.");
     if (!token())
-      return setMessage(
+      return showMessage(
         "You are not logged in. Please login first to approve or reject this document.",
       );
 
     try {
       setLoading(true);
-      setMessage("");
+      showMessage("");
 
       const response = await fetch(
         `${API_URL}/documents/approval/${encodeURIComponent(filename)}`,
@@ -475,19 +723,19 @@ export default function Documents() {
         ["access_token", "username", "user_role"].forEach((k) =>
           localStorage.removeItem(k),
         );
-        setMessage("Your session has expired. Please login again.");
+        showMessage("Your session has expired. Please login again.");
         return;
       }
 
       if (response.status === 403) {
-        setMessage(
+        showMessage(
           "You do not have permission to approve or reject this document.",
         );
         return;
       }
 
       if (!response.ok) {
-        setMessage(
+        showMessage(
           data.detail ||
             data.message ||
             "Unable to process the approval request.",
@@ -495,12 +743,12 @@ export default function Documents() {
         return;
       }
 
-      setMessage(data.message || "Approval decision submitted successfully.");
+      showMessage(data.message || "Approval decision submitted successfully.");
       setReview(null);
       setActiveView(null);
       await fetchDocuments();
     } catch {
-      setMessage(
+      showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
       );
     } finally {
@@ -518,6 +766,19 @@ export default function Documents() {
       uploaded: "bg-warning text-dark",
       failed: "bg-danger",
     })[status] || "bg-secondary";
+
+  const translateStatus = (status) => {
+    const values = {
+      indexed: ["indexed", "مفهرس"],
+      reviewed: ["reviewed", "تمت المراجعة"],
+      approved: ["approved", "تمت الموافقة"],
+      rejected: ["rejected", "مرفوض"],
+      uploaded: ["uploaded", "مرفوع"],
+      failed: ["failed", "فشل"],
+    };
+    const pair = values[status] || [status, status];
+    return tr(pair[0], pair[1]);
+  };
 
   const canAct = canReview;
 
@@ -537,33 +798,89 @@ export default function Documents() {
             </div>
             <h5>
               {processType === "review"
-                ? "Review in Progress"
+                ? tr("Review in Progress", "جاري مراجعة العقد")
                 : processType === "deviation"
-                  ? "Deviation Analysis in Progress"
-                  : "Indexing in Progress"}
+                  ? tr("Deviation Analysis in Progress", "جاري تحليل الانحراف")
+                  : processType === "delete"
+                    ? tr("Deleting Document", "جاري حذف المستند")
+                    : tr("Indexing in Progress", "جاري الفهرسة")}
             </h5>
             <p className="text-muted mb-0">
-              The AI is processing the document. Please wait...
+              {processType === "delete"
+                ? tr(
+                    "The document is being deleted. Please wait...",
+                    "جاري حذف المستند. من فضلك انتظر...",
+                  )
+                : tr(
+                    "The AI is processing the document. Please wait...",
+                    "الذكاء الاصطناعي يعالج المستند. من فضلك انتظر...",
+                  )}
             </p>
           </div>
         </div>
       )}
 
-      <div className="dashboard">
+      {popup.open && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+          style={{ background: "rgba(0,0,0,.45)", zIndex: 3000 }}
+          dir={isArabic ? "rtl" : "ltr"}
+        >
+          <div
+            className="bg-white rounded-4 shadow p-4"
+            style={{
+              width: "min(460px, 90vw)",
+              textAlign: isArabic ? "right" : "left",
+            }}
+          >
+            <h5
+              className={`mb-3 ${popup.type === "error" ? "text-danger" : "text-primary"}`}
+            >
+              {popup.title}
+            </h5>
+            <p className="mb-4" style={{ lineHeight: 1.8 }}>
+              {popup.message}
+            </p>
+            <div className="text-end">
+              <button
+                type="button"
+                className="btn btn-primary px-4"
+                onClick={() =>
+                  setPopup({
+                    open: false,
+                    title: "",
+                    message: "",
+                    type: "info",
+                  })
+                }
+              >
+                {tr("OK", "حسنًا")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="dashboard" dir={isArabic ? "rtl" : "ltr"}>
         <div className="welcome">
-          <h2>Documents</h2>
-          <p>Upload, index, review, and manage your legal contracts.</p>
+          <h2>{tr("Documents", "المستندات")}</h2>
+          <p>
+            {tr(
+              "Upload, index, review, and manage your legal contracts.",
+              "رفع وفهرسة ومراجعة وإدارة العقود القانونية.",
+            )}
+          </p>
         </div>
 
         <div className="content-card mt-4">
-          <h5>Upload Contract</h5>
+          <h5>{tr("Upload Contract", "رفع العقد")}</h5>
           <input
             type="file"
             accept=".pdf"
             className="form-control mt-3"
             onChange={(e) => {
               setFile(e.target.files[0]);
-              setMessage("");
+              showMessage("");
               setReview(null);
               setDeviation(null);
               setActiveView(null);
@@ -576,7 +893,9 @@ export default function Documents() {
               onClick={uploadDocument}
               disabled={loading}
             >
-              {loading ? "Processing..." : "Upload Contract"}
+              {loading
+                ? tr("Processing...", "جارٍ التنفيذ...")
+                : tr("Upload Contract", "رفع العقد")}
             </button>
 
             {file && (
@@ -584,11 +903,11 @@ export default function Documents() {
                 className="btn btn-outline-secondary"
                 onClick={() => {
                   setFile(null);
-                  setMessage("File selection cleared.");
+                  showMessage("File selection cleared.");
                 }}
                 disabled={loading}
               >
-                Clear
+                {tr("Clear", "مسح")}
               </button>
             )}
           </div>
@@ -596,28 +915,30 @@ export default function Documents() {
 
         <div className="content-card mt-4">
           <div className="d-flex justify-content-between align-items-center">
-            <h5 className="mb-0">My Documents</h5>
+            <h5 className="mb-0">{tr("My Documents", "مستنداتي")}</h5>
             <button
               className="btn btn-sm btn-outline-primary"
               onClick={fetchDocuments}
               disabled={loading}
             >
-              Refresh
+              {tr("Refresh", "تحديث")}
             </button>
           </div>
 
           {documents.length === 0 ? (
-            <p className="mt-4 text-muted">No documents found.</p>
+            <p className="mt-4 text-muted">
+              {tr("No documents found.", "لم يتم العثور على مستندات.")}
+            </p>
           ) : (
             <div className="table-responsive mt-4">
               <table className="table table-bordered align-middle">
                 <thead>
                   <tr>
-                    <th>Document</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Updated</th>
-                    <th>Actions</th>
+                    <th>{tr("Document", "المستند")}</th>
+                    <th>{tr("Status", "الحالة")}</th>
+                    <th>{tr("Created", "تاريخ الإنشاء")}</th>
+                    <th>{tr("Updated", "آخر تحديث")}</th>
+                    <th>{tr("Actions", "الإجراءات")}</th>
                   </tr>
                 </thead>
 
@@ -627,7 +948,8 @@ export default function Documents() {
                       <td>
                         <strong>{document.original_filename}</strong>
                         <div className="small text-muted">
-                          Stored: {document.stored_filename}
+                          {tr("Stored:", "الملف المحفوظ:")}{" "}
+                          {document.stored_filename}
                         </div>
                       </td>
 
@@ -635,7 +957,7 @@ export default function Documents() {
                         <span
                           className={`badge ${getStatusClass(document.status)}`}
                         >
-                          {document.status}
+                          {translateStatus(document.status)}
                         </span>
                       </td>
 
@@ -655,11 +977,13 @@ export default function Documents() {
                         <div className="d-flex gap-2 flex-wrap align-items-center">
                           {canAct && (
                             <ActionButton
-                              style={buttonStyles.select}
-                              onClick={() => selectDocument(document)}
+                              style={buttonStyles.delete}
+                              onClick={() => deleteDocument(document)}
                               disabled={loading}
                             >
-                              Select
+                              {loading && processType === "delete"
+                                ? tr("Deleting...", "جارٍ الحذف...")
+                                : tr("Delete", "حذف")}
                             </ActionButton>
                           )}
 
@@ -671,7 +995,7 @@ export default function Documents() {
                               }
                               disabled={loading}
                             >
-                              Upload Again
+                              {tr("Upload Again", "إعادة الرفع")}
                             </ActionButton>
                           )}
 
@@ -686,7 +1010,9 @@ export default function Documents() {
                                 }}
                                 disabled={loading}
                               >
-                                Review Contract
+                                {loading && processType === "review"
+                                  ? tr("Reviewing...", "جارٍ المراجعة...")
+                                  : tr("Review Contract", "مراجعة العقد")}
                               </ActionButton>
 
                               <ActionButton
@@ -700,7 +1026,9 @@ export default function Documents() {
                                 }}
                                 disabled={loading}
                               >
-                                Analyze Deviation
+                                {loading && processType === "deviation"
+                                  ? tr("Analyzing...", "جارٍ التحليل...")
+                                  : tr("Analyze Deviation", "تحليل الانحراف")}
                               </ActionButton>
                             </>
                           )}
@@ -719,7 +1047,7 @@ export default function Documents() {
                                   }}
                                   disabled={loading}
                                 >
-                                  View Review
+                                  {tr("View Review", "عرض المراجعة")}
                                 </ActionButton>
 
                                 <ActionButton
@@ -731,7 +1059,7 @@ export default function Documents() {
                                   }}
                                   disabled={loading}
                                 >
-                                  View Deviation
+                                  {tr("View Deviation", "عرض تحليل الانحراف")}
                                 </ActionButton>
 
                                 <ActionButton
@@ -745,7 +1073,9 @@ export default function Documents() {
                                   }}
                                   disabled={loading}
                                 >
-                                  Analyze Deviation
+                                  {loading && processType === "deviation"
+                                    ? tr("Analyzing...", "جارٍ التحليل...")
+                                    : tr("Analyze Deviation", "تحليل الانحراف")}
                                 </ActionButton>
                               </>
                             )}
@@ -762,7 +1092,8 @@ export default function Documents() {
         {filename && (
           <div className="alert alert-info mt-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div>
-              Selected document: <strong>{filename}</strong>
+              {tr("Selected document:", "المستند المحدد:")}{" "}
+              <strong>{filename}</strong>
             </div>
 
             <button
@@ -776,18 +1107,77 @@ export default function Documents() {
               }}
               disabled={loading}
             >
-              Clear Selection
+              {tr("Clear Selection", "إلغاء تحديد المستند")}
             </button>
           </div>
         )}
 
         {message && (
-          <div className="alert alert-light border mt-4">{message}</div>
+          <div
+            className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+            style={{
+              background: "rgba(0,0,0,.45)",
+              zIndex: 3000,
+            }}
+            onClick={() => showMessage("")}
+          >
+            <div
+              className="bg-white rounded-4 shadow p-4"
+              style={{ minWidth: 360, maxWidth: 520 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="d-flex align-items-center gap-2 mb-3">
+                <div
+                  className="rounded-circle d-flex align-items-center justify-content-center"
+                  style={{
+                    width: 38,
+                    height: 38,
+                    background:
+                      /failed|error|unable|cannot|permission|expired|no saved|not enough|couldn't|could not/i.test(
+                        message,
+                      )
+                        ? "#fdecec"
+                        : "#eef5ff",
+                    color:
+                      /failed|error|unable|cannot|permission|expired|no saved|not enough|couldn't|could not/i.test(
+                        message,
+                      )
+                        ? "#b42318"
+                        : "#2563eb",
+                    fontWeight: 700,
+                  }}
+                >
+                  !
+                </div>
+                <h5 className="mb-0">
+                  {/failed|error|unable|cannot|permission|expired|no saved|not enough|couldn't|could not/i.test(
+                    message,
+                  )
+                    ? "Error"
+                    : "Information"}
+                </h5>
+              </div>
+
+              <p className="mb-4" style={{ lineHeight: 1.7 }}>
+                {message}
+              </p>
+
+              <div className="text-end">
+                <button
+                  type="button"
+                  className="btn btn-primary px-4"
+                  onClick={() => showMessage("")}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {activeView === "review" && review && (
           <div className="content-card mt-4">
-            <h5>Contract Review</h5>
+            <h5>{tr("Contract Review", "مراجعة العقد")}</h5>
 
             {review.risks?.length > 0 ? (
               <div className="mt-3">
@@ -795,24 +1185,29 @@ export default function Documents() {
                   <div className="border rounded p-3 mb-3" key={index}>
                     <h6>{item.title}</h6>
                     <p>
-                      <strong>Risk:</strong> {item.risk?.risk_level}
+                      <strong>{tr("Risk:", "مستوى الخطر:")}</strong>{" "}
+                      {item.risk?.risk_level}
                     </p>
                     <p>
-                      <strong>Reason:</strong> {item.risk?.reason}
+                      <strong>{tr("Reason:", "السبب:")}</strong>{" "}
+                      {item.risk?.reason}
                     </p>
                     <p>
-                      <strong>Evidence:</strong> {item.risk?.evidence}
+                      <strong>{tr("Evidence:", "الدليل:")}</strong>{" "}
+                      {item.risk?.evidence}
                     </p>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-muted mt-3">No risk issues found.</p>
+              <p className="text-muted mt-3">
+                {tr("No risk issues found.", "لا توجد مخاطر في العقد.")}
+              </p>
             )}
 
             {review.memo && (
               <div className="content-card mt-4">
-                <h5 className="mb-3">Risk Memo</h5>
+                <h5 className="mb-3">{tr("Risk Memo", "مذكرة المخاطر")}</h5>
 
                 <div
                   className="border rounded p-4 bg-light"
@@ -837,7 +1232,7 @@ export default function Documents() {
                       onClick={() => submitApproval("approved")}
                       disabled={loading}
                     >
-                      Approve
+                      {tr("Approve", "موافقة")}
                     </button>
 
                     <button
@@ -846,7 +1241,7 @@ export default function Documents() {
                       onClick={() => submitApproval("rejected")}
                       disabled={loading}
                     >
-                      Reject
+                      {tr("Reject", "رفض")}
                     </button>
                   </div>
                 )}
@@ -857,7 +1252,7 @@ export default function Documents() {
 
         {activeView === "deviation" && deviation && (
           <div className="content-card mt-4">
-            <h5>Deviation Analysis</h5>
+            <h5>{tr("Deviation Analysis", "تحليل الانحراف")}</h5>
 
             {deviation.results?.length > 0 ? (
               <div className="mt-3">
@@ -874,7 +1269,9 @@ export default function Documents() {
                           borderColor: "#dbe2ea",
                         }}
                       >
-                        <h6 className="mb-2">Playbook Rule</h6>
+                        <h6 className="mb-2">
+                          {tr("Playbook Rule", "قاعدة الـ Playbook")}
+                        </h6>
 
                         <div
                           style={{
@@ -894,20 +1291,24 @@ export default function Documents() {
 
                     {item.deviation && typeof item.deviation === "string" && (
                       <p>
-                        <strong>Deviation:</strong> {item.deviation}
+                        <strong>{tr("Deviation:", "الانحراف:")}</strong>{" "}
+                        {item.deviation}
                       </p>
                     )}
 
                     {item.deviation && typeof item.deviation === "object" && (
                       <>
                         <p>
-                          <strong>Deviation:</strong>{" "}
-                          {item.deviation.deviation ? "Yes" : "No"}
+                          <strong>{tr("Deviation:", "الانحراف:")}</strong>{" "}
+                          {item.deviation.deviation
+                            ? tr("Yes", "نعم")
+                            : tr("No", "لا")}
                         </p>
 
                         {item.deviation.reason && (
                           <p>
-                            <strong>Reason:</strong> {item.deviation.reason}
+                            <strong>{tr("Reason:", "السبب:")}</strong>{" "}
+                            {item.deviation.reason}
                           </p>
                         )}
                       </>
@@ -915,14 +1316,17 @@ export default function Documents() {
 
                     {!item.rule && item.reason && (
                       <p>
-                        <strong>Result:</strong> {item.reason}
+                        <strong>{tr("Result:", "النتيجة:")}</strong>{" "}
+                        {item.reason}
                       </p>
                     )}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-muted mt-3">No deviation results found.</p>
+              <p className="text-muted mt-3">
+                {tr("No deviation results found.", "لا توجد نتائج انحراف.")}
+              </p>
             )}
           </div>
         )}
