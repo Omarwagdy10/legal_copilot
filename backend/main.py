@@ -234,60 +234,47 @@ def search_documents(
     }
 
 
-@app.get('/ask')
+@app.get("/ask")
 def ask_question(
     query: str,
-    filename: str | None = None,
-    user: User = Depends(get_current_user),
+    filename: str,
+    user: User = Depends(get_current_user)
 ):
-    """
-    Answer a question using only the selected document when
-    filename is provided.
-    """
-
     results = hybrid_search(
         collection,
         query,
         top_k=5,
-        filename=filename,
+        filename=filename
     )
 
-    if not results or results[0]['fusion_score'] < settings.min_evidence_score:
+    if not results or results[0]["fusion_score"] < settings.min_evidence_score:
         return {
-            'question': query,
-            'filename': filename,
-            'answer': 'Not enough information in the document.',
-            'sources': [],
+            "question": query,
+            "answer": "Not enough information in the document.",
+            "sources": []
         }
 
-    context = '\n\n'.join(
-        f"[{i+1}] {r['text']}"
+    context = "\n\n".join(
+        f"[{i + 1}] {r['text']}"
         for i, r in enumerate(results)
     )
 
-    selected_document_text = (
-        f"You must answer ONLY from the selected document: {filename}."
-        if filename
-        else
-        "No specific document was selected. Answer only from the supplied context."
-    )
-
     prompt = (
-        f"You are a legal assistant. {selected_document_text} "
-        f"Answer ONLY from the supplied context. "
-        f"Respect the language of the user. "
-        f"Do not use information from outside the context. "
-        f"If the context is insufficient, say exactly: Not enough information in the document.\n\n"
-        f"Context:\n{context}\n\nQuestion:\n{query}"
+        "You are a legal assistant. "
+        "Answer ONLY from the supplied context. "
+        "Respect the language of the user. "
+        'If evidence is insufficient, say exactly: '
+        '"Not enough information in the document."\n\n'
+        f"Context:\n{context}\n\n"
+        f"Question:\n{query}"
     )
 
     answer = generate_ai_response(prompt)
 
     return {
-        'question': query,
-        'filename': filename,
-        'answer': answer,
-        'sources': results,
+        "question": query,
+        "answer": answer,
+        "sources": results
     }
 
 
