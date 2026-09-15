@@ -73,7 +73,6 @@ export default function Documents() {
   const [review, setReview] = useState(null);
   const [deviation, setDeviation] = useState(null);
   const [activeView, setActiveView] = useState(null);
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [processType, setProcessType] = useState("");
   const [popup, setPopup] = useState({
@@ -201,7 +200,6 @@ export default function Documents() {
 
   const showMessage = (value, type = "info") => {
     const text = getUserFriendlyMessage(value);
-    setMessage(text);
 
     if (!text) {
       setPopup({ open: false, title: "", message: "", type: "info" });
@@ -491,10 +489,8 @@ export default function Documents() {
 
       const msg = data.cached
         ? "Existing review loaded. The AI workflow was not executed again."
-        : "Review completed successfully. Reloading the page...";
+        : "Review completed successfully. The review results are now displayed below.";
       showMessage(msg);
-
-      if (!data.cached) setTimeout(() => window.location.reload(), 700);
     } catch {
       showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
@@ -598,10 +594,8 @@ export default function Documents() {
 
       const msg = data.cached
         ? "Existing deviation analysis loaded. No new AI analysis was executed."
-        : "Deviation analysis completed successfully. Reloading the page...";
+        : "Deviation analysis completed successfully. The analysis results are now displayed below.";
       showMessage(msg);
-
-      if (!data.cached) setTimeout(() => window.location.reload(), 700);
     } catch {
       showMessage(
         "Unable to connect to the server. Please make sure the backend is running.",
@@ -1109,69 +1103,6 @@ export default function Documents() {
             >
               {tr("Clear Selection", "إلغاء تحديد المستند")}
             </button>
-          </div>
-        )}
-
-        {message && (
-          <div
-            className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
-            style={{
-              background: "rgba(0,0,0,.45)",
-              zIndex: 3000,
-            }}
-            onClick={() => showMessage("")}
-          >
-            <div
-              className="bg-white rounded-4 shadow p-4"
-              style={{ minWidth: 360, maxWidth: 520 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="d-flex align-items-center gap-2 mb-3">
-                <div
-                  className="rounded-circle d-flex align-items-center justify-content-center"
-                  style={{
-                    width: 38,
-                    height: 38,
-                    background:
-                      /failed|error|unable|cannot|permission|expired|no saved|not enough|couldn't|could not/i.test(
-                        message,
-                      )
-                        ? "#fdecec"
-                        : "#eef5ff",
-                    color:
-                      /failed|error|unable|cannot|permission|expired|no saved|not enough|couldn't|could not/i.test(
-                        message,
-                      )
-                        ? "#b42318"
-                        : "#2563eb",
-                    fontWeight: 700,
-                  }}
-                >
-                  !
-                </div>
-                <h5 className="mb-0">
-                  {/failed|error|unable|cannot|permission|expired|no saved|not enough|couldn't|could not/i.test(
-                    message,
-                  )
-                    ? "Error"
-                    : "Information"}
-                </h5>
-              </div>
-
-              <p className="mb-4" style={{ lineHeight: 1.7 }}>
-                {message}
-              </p>
-
-              <div className="text-end">
-                <button
-                  type="button"
-                  className="btn btn-primary px-4"
-                  onClick={() => showMessage("")}
-                >
-                  OK
-                </button>
-              </div>
-            </div>
           </div>
         )}
 
