@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel
-from pypdf import PdfReader
+import pymupdf
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from database import get_db
@@ -71,11 +71,27 @@ def unique_filename(filename):
     return candidate
 
 def extract_text(filename):
-    path=BASE_DIR/'uploads'/filename
-    if not path.exists(): raise HTTPException(404, 'Document file not found.')
-    if path.suffix.lower()=='.txt': return path.read_text(encoding='utf-8', errors='ignore')
-    reader=PdfReader(str(path))
-    return '\n'.join((p.extract_text() or '') for p in reader.pages)
+    path = BASE_DIR / 'uploads' / filename
+
+    if not path.exists():
+        raise HTTPException(404, 'Document file not found.')
+
+    if path.suffix.lower() == '.txt':
+        return path.read_text(
+            encoding='utf-8',
+            errors='ignore'
+        )
+
+    doc = pymupdf.open(str(path))
+
+    try:
+        return "\n".join(
+            page.get_text("text") or ""
+            for page in doc
+        )
+    finally:
+        doc.close()
+
 
 def clean_text(text):
     return re.sub(r'\s+', ' ', text).strip()
@@ -260,10 +276,18 @@ def ask_question(
     )
 
     prompt = (
-        "You are a legal assistant. "
-        "Answer ONLY from the supplied context. "
-        "Respect the language of the user. "
-        'If evidence is insufficient, say exactly: '
+        "You are a legal contract assistant.\n"
+        "Answer the user's question using ONLY the supplied document context.\n"
+        "Do not invent or assume facts that are not present in the context.\n"
+        "Preserve exact numbers, dates, amounts, percentages, names, and currencies "
+        "from the context.\n"
+        "Understand common Arabic variations and informal wording.\n"
+        "For example, words such as "
+        "'المرتب', 'مرتبة', 'الراتب', 'راتب', 'أجر', 'الأجر' "
+        "may refer to salary/pay when the supplied context clearly discusses salary.\n"
+        "If the relevant information exists anywhere in the supplied context, "
+        "answer the question directly.\n"
+        "If the information truly does not exist in the supplied context, say exactly:\n"
         '"Not enough information in the document."\n\n'
         f"Context:\n{context}\n\n"
         f"Question:\n{query}"

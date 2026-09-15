@@ -1,17 +1,28 @@
 CONTRACT_EXPANSIONS = {
     # Salary
-    "salary": "الراتب المرتب الأجر الأجور",
-    "pay": "الراتب المرتب الأجر الدفع",
-    "wage": "الأجر الراتب المرتب",
-    "compensation": "التعويض المقابل المادي الراتب",
-    "remuneration": "الأجر الراتب المقابل المادي",
+    "salary": "الراتب المرتب الأجر الأجور salary pay wage compensation remuneration",
+    "pay": "الراتب المرتب الأجر الأجور salary pay wage compensation remuneration",
+    "wage": "الراتب المرتب الأجر الأجور salary pay wage compensation remuneration",
+    "compensation": "الراتب المرتب الأجر الأجور salary pay wage compensation remuneration",
+    "remuneration": "الراتب المرتب الأجر الأجور salary pay wage compensation remuneration",
+
+    "الراتب": "salary pay wage compensation remuneration الراتب المرتب الأجر الأجور",
+    "المرتب": "salary pay wage compensation remuneration الراتب المرتب الأجر الأجور",
+    "الأجر": "salary pay wage compensation remuneration الراتب المرتب الأجر الأجور",
+    "الأجور": "salary pay wage compensation remuneration الراتب المرتب الأجر الأجور",
 
     # Benefits
-    "benefit": "المزايا الحوافز البدلات المكافآت",
-    "benefits": "المزايا الحوافز البدلات المكافآت",
-    "bonus": "المكافأة المكافآت الحوافز",
-    "allowance": "البدل البدلات المزايا",
-    "incentive": "الحافز الحوافز المكافآت",
+    "benefit": "المزايا الحوافز البدلات المكافآت benefit benefits bonus allowance incentive",
+    "benefits": "المزايا الحوافز البدلات المكافآت benefit benefits bonus allowance incentive",
+    "bonus": "المكافأة المكافآت الحوافز benefit benefits bonus allowance incentive",
+    "allowance": "البدل البدلات المزايا benefit benefits bonus allowance incentive",
+    "incentive": "الحافز الحوافز المكافآت benefit benefits bonus allowance incentive",
+
+    "المزايا": "benefit benefits bonus allowance incentive المزايا الحوافز البدلات المكافآت",
+    "الحوافز": "benefit benefits bonus allowance incentive المزايا الحوافز البدلات المكافآت",
+    "البدلات": "benefit benefits bonus allowance incentive المزايا الحوافز البدلات المكافآت",
+    "المكافآت": "benefit benefits bonus allowance incentive المزايا الحوافز البدلات المكافآت",
+
 
     # Employment
     "employee": "الموظف العامل الموظفين",
